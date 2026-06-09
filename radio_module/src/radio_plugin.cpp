@@ -43,7 +43,7 @@ RadioModulePlugin::~RadioModulePlugin()
 
 void RadioModulePlugin::initLogos(LogosAPI* api)
 {
-    m_logosAPI = api;
+    logosAPI = api;  // base PluginInterface member — ModuleProxy reads this for IPC. Do NOT shadow it.
     qDebug() << "RadioModulePlugin: initLogos";
     // Issue #5: pre-init delivery_module client here (eager init; skill ipc-client-eager-init).
     emit eventResponse("initialized", QVariantList() << "radio_module" << "0.1.0");

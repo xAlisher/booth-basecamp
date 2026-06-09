@@ -59,7 +59,8 @@ private:
     static QString randomHex(int bytes);
     int      port(const char* envVar, int fallback) const;
 
-    LogosAPI* m_logosAPI = nullptr;
+    // NB: do NOT declare a LogosAPI* member — initLogos must set the base PluginInterface::logosAPI,
+    // which ModuleProxy reads for cross-module IPC (skills: logosapi-member-no-redeclare, initlogos-no-override).
 
     QProcess* m_mediamtx = nullptr;
     QString   m_streamName, m_visibility, m_description;
