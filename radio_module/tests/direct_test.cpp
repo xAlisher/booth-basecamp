@@ -26,8 +26,12 @@ int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     int apiPort = qEnvironmentVariableIntValue("RADIO_API_PORT"); if (!apiPort) apiPort = 9997;
 
-    // --- #3: startStream mints a full ingest card ---
+    // --- #6 gating: nothing streaming yet → announce is gated 'not_live' ---
     RadioModulePlugin p;
+    ok(QJsonDocument::fromJson(p.announceOnce().toUtf8()).object().value("reason").toString() == "not_live",
+       "announce gated 'not_live' before streaming");
+
+    // --- #3: startStream mints a full ingest card ---
     const QJsonObject card = QJsonDocument::fromJson(
         p.startStream("{\"name\":\"Test\",\"visibility\":\"public\"}").toUtf8()).object();
     printf("CARD: %s\n", QJsonDocument(card).toJson(QJsonDocument::Compact).constData());
@@ -56,6 +60,18 @@ int main(int argc, char** argv) {
     push.waitForStarted(3000);
     QString st; for (int i = 0; i < 12 && st != "live"; ++i) { QThread::msleep(1000); st = state(); }
     ok(st == "live" || st == "receiving", (QString("status '")+st+"' while publishing").toUtf8());
+
+    // --- #6: while live, the announce gate passes and the payload carries the full schema ---
+    {
+        const QJsonObject ann = QJsonDocument::fromJson(p.announceOnce().toUtf8()).object();
+        const QJsonObject pl = ann.value("payload").toObject();
+        bool schema = true;
+        for (const char* k : {"v","name","host","path","streamUrl","visibility","startedAt","seq"})
+            schema = schema && pl.contains(k);
+        // no delivery_module in-process → can't actually send, but the GATE passed (state live)
+        ok(ann.value("reason").toString() == "no_delivery" && schema,
+           "announce gate passes when live + payload has full schema");
+    }
     push.kill(); push.waitForFinished(2000);
 
     // --- stopStream tears it down ---

@@ -39,7 +39,7 @@ Nix only sees git-tracked files — `git add -A` before building.
 | 3 | Origin | Ingest URL + stream-key minting | P0 | done |
 | 4 | Origin | MediaMTX status polling | P0 | done |
 | 5 | Discovery | delivery_module init + topic plumbing | P0 | done (live IPC → AppImage) |
-| 6 | Discovery | Announce schema + publish | P0 | todo |
+| 6 | Discovery | Announce schema + publish | P0 | done (send → AppImage) |
 | 7 | Stream UI | Setup card + start/stop | P0 | todo |
 | 8 | Stream UI | Live status light | P0 | todo |
 | 9 | Listen | Directory render + tap-to-play | P0 | todo |

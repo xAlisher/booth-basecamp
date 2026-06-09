@@ -97,10 +97,13 @@ validates, self-echo filters (skip own `path`), stores keyed by path with `_last
   (can't test headlessly — logoscore gates returns; `logoscore-gates-method-returns`). Remaining headless
   gap is the ONLY unverified part of the origin+discovery slice.
 
-**#6 — Announce schema + publish.** Host announce payload `{v, name, host, streamUrl, visibility,
-description, startedAt, seq}` published on the directory topic (public) or private topic. Announce
-begins only when status == `receiving`/`live` (#4), stops on `stopStream`.
-- **Headless test:** assert published payload validates against schema; announce is gated on stream state.
+**#6 — Announce schema + publish.** ✅ **DONE (2026-06-10): schema + gating runtime-proven; send → AppImage.**
+`buildAnnouncePayload(seq)` → `{v, name, host, path, streamUrl, visibility, description, startedAt, seq}`.
+`announceOnce()` gates on `streamState()` (only `live`/`receiving`), then publishes on the announce topic —
+**public → directory topic; private → `/radio-basecamp/1/<path>/json`** (set in `startStream`). Delivery-node
+init refactored into shared `ensureDeliveryNode()` (used by #5 + #6). The #10 heartbeat will call `announceOnce()` on a timer.
+- **Proof:** direct-test ALL PASS — gated `not_live` before streaming; once live, the gate passes and the
+  payload carries the full schema. Actual `delivery_module.send` needs the AppImage (same gap as #5's round-trip).
 
 ### Epic D — Stream tab UI  (P0→P1)
 
@@ -198,6 +201,7 @@ scorched-earth P2P notes: distinct `SCORCHED_TCP_PORT`-style node separation if 
 | startStream mints card + spawns MediaMTX, stopStream tears down, path unique | ✅ (#3 2026-06-10, direct-test ALL PASS) | | | |
 | getStreamStatus: waiting (no pub) → live (after ffmpeg push) | ✅ (#4 2026-06-10, direct-test ALL PASS) | | | |
 | ingestAnnounce: base64 decode + parse + self-echo/malformed filter | ✅ (#5 2026-06-10, direct-test) | | | |
+| announce schema + gating (not_live → gate passes when live) | ✅ (#6 2026-06-10, direct-test) | | | |
 | delivery_module wiring (createNode/subscribe/onEvent) | | | ✅ (#5 builds + module loads) | |
 | live delivery_module send/receive round-trip | | | | ⚠️ needs AppImage (2 nodes; logoscore gates returns) |
 | radio_module loads + dispatches ping (logoscore, isolated dir) | ✅ (#1 2026-06-10: registry connect + "Method call successful", same as canonical capability_module) | | | |

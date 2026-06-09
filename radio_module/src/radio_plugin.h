@@ -56,6 +56,11 @@ public:
     // messageReceived handler and directly by tests/direct_test.cpp. Not part of the IPC API.
     void ingestAnnounce(const QString& base64Payload);
 
+    // #6 host announce. buildAnnouncePayload is a pure test seam; announceOnce gates on live
+    // status then publishes (called by the #10 heartbeat timer and by tests). Not IPC API.
+    QString buildAnnouncePayload(int seq) const;
+    QString announceOnce();
+
 signals:
     void eventResponse(const QString& eventName, const QVariantList& args);
 
@@ -70,9 +75,11 @@ private:
     // Synchronous localhost GET to the MediaMTX API (QTcpSocket — no event-loop reentrancy).
     // Returns HTTP status code (-1 on connect/read failure); body in bodyOut.
     int      httpGet(int apiPort, const QString& path, QString& bodyOut) const;
-    // --- Discovery (#5) ---
+    QString  streamState();                // #4 poll, shared by getStreamStatus + announce gating
+    // --- Discovery (#5/#6) ---
     QString  directoryTopic() const;       // well-known public directory topic
     bool     subscribeTopic(const QString& topic);
+    bool     ensureDeliveryNode();         // idempotent delivery_module getClient + createNode + start
 
     // NB: do NOT declare a LogosAPI* member — initLogos must set the base PluginInterface::logosAPI,
     // which ModuleProxy reads for cross-module IPC (skills: logosapi-member-no-redeclare, initlogos-no-override).
@@ -82,10 +89,15 @@ private:
     QString   m_path;        // random MediaMTX path = OBS stream key (v1; real publish auth → #18)
     QString   m_runtimeDir;  // per-stream temp dir holding mediamtx.yml
     QString   m_lastStreamState;  // for streamStatusChanged edge detection (#4)
+    // Host announce (#6)
+    qint64    m_startedAt = 0;
+    int       m_announceSeq = 0;
+    QString   m_announceTopic, m_hostLabel;
 
     // Discovery (#5)
     LogosAPIClient* m_delivery = nullptr;
     LogosObject*    m_deliveryObj = nullptr;
+    bool            m_deliveryNodeUp = false;
     bool            m_discovering = false;
     QSet<QString>   m_subscribedTopics;
     QMap<QString, QJsonObject> m_stations;  // keyed by path; value carries "_lastSeen" ms (TTL → #11)

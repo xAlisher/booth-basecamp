@@ -14,6 +14,7 @@
 #include <QTextStream>
 #include <QTcpSocket>
 #include <QJsonArray>
+#include <QSysInfo>
 
 // Uniform JSON return shape so the QML bridge is stable. Implemented per-issue
 // (see docs/plans/radio-implementation.md); remaining methods are stubs.
@@ -153,6 +154,13 @@ QString RadioModulePlugin::startStream(const QString& configJson)
     m_path       = randomHex(8);  // 16 hex chars — stream id + OBS stream key (v1)
     m_runtimeDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
                    + "/radio_module/" + m_path;
+    m_startedAt   = QDateTime::currentMSecsSinceEpoch();
+    m_announceSeq = 0;
+    m_hostLabel   = QSysInfo::machineHostName();
+    // Public → directory topic; private → unguessable per-stream topic (shared out-of-band).
+    m_announceTopic = (m_visibility == "private")
+                      ? QStringLiteral("/radio-basecamp/1/%1/json").arg(m_path)
+                      : directoryTopic();
 
     const QString configPath = writeMediaMtxConfig();
     if (configPath.isEmpty())     return err("config_write_failed");
@@ -184,6 +192,7 @@ QString RadioModulePlugin::stopStream()
     qDebug() << "RadioModulePlugin: stream stopped";
     emit eventResponse("streamStopped", QVariantList() << m_path);
     m_path.clear(); m_streamName.clear(); m_lastStreamState.clear();
+    m_announceTopic.clear(); m_startedAt = 0; m_announceSeq = 0;
     return ok();
 }
 
@@ -211,26 +220,25 @@ int RadioModulePlugin::httpGet(int apiPort, const QString& path, QString& bodyOu
     return parts.size() >= 2 ? parts[1].toInt() : -1;
 }
 
+QString RadioModulePlugin::streamState()
+{
+    if (!m_mediamtx) return QStringLiteral("idle");
+    QString body;
+    const int code = httpGet(port("RADIO_API_PORT", 9997),
+                             QStringLiteral("/v3/paths/get/%1").arg(m_path), body);
+    if (code != 200) return QStringLiteral("waiting");  // path not created → OBS not connected
+    const QJsonObject p = QJsonDocument::fromJson(body.toUtf8()).object();
+    const bool ready = p.value("ready").toBool();
+    const bool hasSource = !p.value("source").isNull() && p.value("source").isObject();
+    const bool hasTracks = !p.value("tracks").toArray().isEmpty();
+    return (ready && hasTracks) ? QStringLiteral("live")
+         : hasSource           ? QStringLiteral("receiving")
+                               : QStringLiteral("waiting");
+}
+
 QString RadioModulePlugin::getStreamStatus()
 {
-    QString state = QStringLiteral("idle");
-    if (m_mediamtx) {
-        QString body;
-        const int code = httpGet(port("RADIO_API_PORT", 9997),
-                                 QStringLiteral("/v3/paths/get/%1").arg(m_path), body);
-        if (code != 200) {
-            state = QStringLiteral("waiting");  // path not created yet → OBS not connected
-        } else {
-            const QJsonObject p = QJsonDocument::fromJson(body.toUtf8()).object();
-            const bool ready = p.value("ready").toBool();
-            const bool hasSource = !p.value("source").isNull() && p.value("source").isObject();
-            const bool hasTracks = !p.value("tracks").toArray().isEmpty();
-            state = (ready && hasTracks) ? QStringLiteral("live")
-                  : hasSource           ? QStringLiteral("receiving")
-                                        : QStringLiteral("waiting");
-        }
-    }
-
+    const QString state = streamState();
     QJsonObject r{{"ok", true}, {"state", state}};
     if (m_mediamtx)
         r["hlsUrl"] = QStringLiteral("http://%1:%2/%3/index.m3u8")
@@ -264,16 +272,25 @@ bool RadioModulePlugin::subscribeTopic(const QString& topic)
     return true;
 }
 
+bool RadioModulePlugin::ensureDeliveryNode()
+{
+    if (m_deliveryNodeUp) return true;
+    if (!logosAPI) return false;
+    m_delivery = logosAPI->getClient("delivery_module");
+    if (!m_delivery) return false;
+    m_delivery->invokeRemoteMethod("delivery_module", "createNode",
+        QStringLiteral("{\"logLevel\":\"INFO\",\"mode\":\"Core\",\"preset\":\"logos.dev\",\"relay\":true}"));
+    m_delivery->invokeRemoteMethod("delivery_module", "start");
+    m_deliveryNodeUp = true;
+    return true;
+}
+
 QString RadioModulePlugin::startDiscovery()
 {
     if (m_discovering) return ok();  // idempotent; reentrancy guard
-    if (!logosAPI) return err("no_logos_api");
-    m_delivery = logosAPI->getClient("delivery_module");
-    if (!m_delivery) return err("no_delivery_client");
+    if (!ensureDeliveryNode()) return err("no_delivery_client");
 
-    m_delivery->invokeRemoteMethod("delivery_module", "createNode",
-        QStringLiteral("{\"logLevel\":\"INFO\",\"mode\":\"Core\",\"preset\":\"logos.dev\",\"relay\":true}"));
-
+    // Register the receive handler BEFORE subscribing so no announce is missed.
     m_deliveryObj = m_delivery->requestObject("delivery_module");
     if (m_deliveryObj) {
         m_delivery->onEvent(m_deliveryObj, "messageReceived",
@@ -282,7 +299,6 @@ QString RadioModulePlugin::startDiscovery()
                 ingestAnnounce(data[2].toString());  // data[2] = base64(payload)
             });
     }
-    m_delivery->invokeRemoteMethod("delivery_module", "start");
     subscribeTopic(directoryTopic());
     m_discovering = true;
     qDebug() << "RadioModulePlugin: discovery started on" << directoryTopic();
@@ -317,6 +333,46 @@ QString RadioModulePlugin::getStations()
     for (const QJsonObject& s : m_stations) arr.append(s);  // #11 will prune by _lastSeen here
     return QString::fromUtf8(QJsonDocument(QJsonObject{{"ok", true}, {"stations", arr}})
                                  .toJson(QJsonDocument::Compact));
+}
+
+// ---------------------------------------------------------------------------
+// #6 — host announce: build the schema payload, gate on live status, publish.
+// ---------------------------------------------------------------------------
+
+QString RadioModulePlugin::buildAnnouncePayload(int seq) const
+{
+    const QString hls = QStringLiteral("http://%1:%2/%3/index.m3u8")
+                            .arg(lanIp()).arg(port("RADIO_HLS_PORT", 8888)).arg(m_path);
+    const QJsonObject a{
+        {"v", 1}, {"name", m_streamName}, {"host", m_hostLabel}, {"path", m_path},
+        {"streamUrl", hls}, {"visibility", m_visibility}, {"description", m_description},
+        {"startedAt", m_startedAt}, {"seq", seq}
+    };
+    return QString::fromUtf8(QJsonDocument(a).toJson(QJsonDocument::Compact));
+}
+
+QString RadioModulePlugin::announceOnce()
+{
+    auto result = [](bool announced, const QString& reason, const QString& payload, int seq) {
+        QJsonObject r{{"ok", true}, {"announced", announced}};
+        if (!reason.isEmpty())  r["reason"]  = reason;
+        if (!payload.isEmpty()) r["payload"] = QJsonDocument::fromJson(payload.toUtf8()).object();
+        if (announced)          r["seq"]     = seq;
+        return QString::fromUtf8(QJsonDocument(r).toJson(QJsonDocument::Compact));
+    };
+    // Gate: only announce once the origin is actually receiving the stream (#4).
+    const QString state = streamState();
+    if (state != "live" && state != "receiving")
+        return result(false, "not_live", QString(), 0);
+
+    const QString payload = buildAnnouncePayload(m_announceSeq);
+    if (!ensureDeliveryNode())
+        return result(false, "no_delivery", payload, 0);  // gate passed; delivery just unavailable
+
+    m_delivery->invokeRemoteMethod("delivery_module", "send", m_announceTopic, payload);
+    const int seq = m_announceSeq++;
+    qDebug() << "RadioModulePlugin: announced seq" << seq << "on" << m_announceTopic;
+    return result(true, QString(), payload, seq);
 }
 
 QString RadioModulePlugin::play(const QString&, const QString&) { return notImplemented("play"); }       // #9
