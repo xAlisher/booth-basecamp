@@ -11,6 +11,24 @@ Item {
     width: 480; height: 640
 
     property var streamCard: null   // set after startStream succeeds (#7); null = setup form
+    property string streamState: "idle"  // polled from getStreamStatus (#8)
+
+    // #8: poll origin status while streaming (skill qml-timer-state-polling).
+    Timer {
+        interval: 1500; repeat: true
+        running: root.streamCard !== null
+        onTriggered: { var r = root.callParse("getStreamStatus", []); if (r && r.state) root.streamState = r.state }
+    }
+    function stateLabel() {
+        return root.streamState === "live"      ? "🔴 Live (announcing)"
+             : root.streamState === "receiving" ? "Receiving stream…"
+                                                 : "Waiting for OBS…"
+    }
+    function stateColor() {
+        return root.streamState === "live"      ? "#e5484d"
+             : root.streamState === "receiving" ? "#f5a623"
+                                                 : "#8b949e"
+    }
 
     function callParse(method, args) {
         try {
@@ -31,9 +49,9 @@ Item {
             description: descField.text
         })
         var r = callParse("startStream", [cfg])
-        if (r && r.ok) root.streamCard = r
+        if (r && r.ok) { root.streamState = "waiting"; root.streamCard = r }
     }
-    function stopStream() { callParse("stopStream", []); root.streamCard = null }
+    function stopStream() { callParse("stopStream", []); root.streamCard = null; root.streamState = "idle" }
 
     ColumnLayout {
         anchors.fill: parent
@@ -101,6 +119,13 @@ Item {
                         Layout.fillWidth: true
                         spacing: 10
                         visible: root.streamCard !== null
+
+                        // #8 live status light — polled from getStreamStatus.
+                        RowLayout {
+                            spacing: 8
+                            Rectangle { width: 12; height: 12; radius: 6; color: root.stateColor() }
+                            Label { text: root.stateLabel(); font.pixelSize: 15; font.bold: true }
+                        }
 
                         Label { text: "Point OBS here"; font.pixelSize: 16; font.bold: true }
                         Label {

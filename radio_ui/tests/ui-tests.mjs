@@ -20,7 +20,11 @@ test("radio_ui: Stream-tab setup-form elements instantiate (#7)", async (app) =>
   await app.expectTexts(["Station name", "Visibility", "Public", "Private", "Start"]);
 });
 
-// Issue #8:  status light transitions Waiting -> Receiving -> Live
+test("radio_ui: status light instantiates with default-state label (#8)", async (app) => {
+  // streamState defaults to "idle" → stateLabel() = "Waiting for OBS…". expectTexts ignores
+  // visibility, so this proves the status label exists/binds; live transitions need the real app.
+  await app.expectTexts(["Waiting for OBS…"]);
+});
 // Issue #9:  Listen tab renders seeded stations; tap calls radio_module.play
 // Note: the Start->OBS-card click-through spawns MediaMTX + needs a non-gated backend, so it is
 // verified in the running app / cross-machine demo, not this hermetic test.

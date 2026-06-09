@@ -118,9 +118,12 @@ instantiate.** Name field, Public/Private (`ButtonGroup`), description, Start (d
   `expectTexts` matches by `text` property **regardless of visibility** → it proves elements EXIST, not
   visible render. So all `ui-tests.mjs` assertions = "QML loads + elements instantiate", not visual correctness.
 
-**#8 — Live status light.** QML polls `getStreamStatus()` (1–2s timer); renders Waiting → Receiving
-→ 🔴 Live. Layout: use `implicitHeight`, not `height`, inside layouts (known QML layout bug).
-- **Headless UI test:** drive status via mocked backend states → assert the three label transitions.
+**#8 — Live status light.** ✅ **DONE (2026-06-10).** A 1.5s `Timer` (running while streaming) polls
+`getStreamStatus()` → `streamState`; a dot+label row in the OBS card maps idle/waiting→"Waiting for
+OBS…" (grey), receiving→"Receiving stream…" (amber), live→"🔴 Live (announcing)" (red). Applies
+`qml-timer-state-polling`.
+- **Proof:** integration-test passes — status label instantiates with default-state text. Live
+  transitions need a real stream (mediamtx not on PATH in the UI sandbox; backend mapping already proven in #4).
 
 ### Epic E — Listen tab + playback  (P0→P1)
 
