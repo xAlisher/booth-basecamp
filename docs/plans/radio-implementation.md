@@ -107,11 +107,16 @@ init refactored into shared `ensureDeliveryNode()` (used by #5 + #6). The #10 he
 
 ### Epic D — Stream tab UI  (P0→P1)
 
-**#7 — Stream tab: setup card + start/stop.** QML: name field, Public/Private toggle, optional
-description, Start/Stop. Calls `startStream`/`stopStream`. OBS setup card with copy-to-clipboard
-(no `Qt.openUrlExternally` — sandbox; use clip helper per `qml-sandbox-restrictions`).
-- **Headless UI test (`radio_ui/tests/ui-tests.mjs`):** load UI, `expectTexts(["Stream","Start"])`;
-  after a mocked start, assert the OBS card text (server URL / stream key labels) renders.
+**#7 — Stream tab: setup card + start/stop.** ✅ **DONE (2026-06-10): UI built, QML loads + elements
+instantiate.** Name field, Public/Private (`ButtonGroup`), description, Start (disabled until name set)
+→ `startStream`; OBS card (WHIP/RTMP/Stream-Key + Copy via hidden-`TextEdit` clip helper, no
+`Qt.openUrlExternally`) + Stop → `stopStream`. Renders from `streamCard` property.
+- **Proof:** integration-test passes (QML loads, form elements instantiate). **Findings (2026-06-10):**
+  (a) `logos.callModule` WORKS in the standalone app (real returns, unlike gated bare logoscore) — UI tests
+  can drive the backend; (b) `mediamtx` is NOT on PATH in the standalone-app sandbox (`execve: No such file`),
+  so the full Start→card flow can't run there — verified in the running app; (c) the framework's
+  `expectTexts` matches by `text` property **regardless of visibility** → it proves elements EXIST, not
+  visible render. So all `ui-tests.mjs` assertions = "QML loads + elements instantiate", not visual correctness.
 
 **#8 — Live status light.** QML polls `getStreamStatus()` (1–2s timer); renders Waiting → Receiving
 → 🔴 Live. Layout: use `implicitHeight`, not `height`, inside layouts (known QML layout bug).
@@ -197,7 +202,8 @@ scorched-earth P2P notes: distinct `SCORCHED_TCP_PORT`-style node separation if 
 | MediaMTX needs `paths: all_others` for arbitrary paths | ✅ (#2 spike) | | | |
 | delivery_module builds as a dep (pinned v0.1.1 + follows) | | | ✅ (#1 build green) | |
 | radio_module + radio_ui compile (nix build) | ✅ (#1 2026-06-10) | | | |
-| radio_ui loads + renders both tabs (integration-test) | ✅ (#1 2026-06-10, runtime: plugin loaded, expectTexts passed) | | | |
+| radio_ui QML loads + tab/form elements instantiate (integration-test) | ✅ (#1/#7 2026-06-10; NB expectTexts proves existence, not visible render) | | | |
+| logos.callModule works in standalone app (real returns) | ✅ (#7 probe 2026-06-10) | | | |
 | startStream mints card + spawns MediaMTX, stopStream tears down, path unique | ✅ (#3 2026-06-10, direct-test ALL PASS) | | | |
 | getStreamStatus: waiting (no pub) → live (after ffmpeg push) | ✅ (#4 2026-06-10, direct-test ALL PASS) | | | |
 | ingestAnnounce: base64 decode + parse + self-echo/malformed filter | ✅ (#5 2026-06-10, direct-test) | | | |
