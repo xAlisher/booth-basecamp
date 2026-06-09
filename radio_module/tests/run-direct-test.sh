@@ -44,7 +44,7 @@ echo "Built. Running (isolated high ports)..."
 
 MTX="${RADIO_MEDIAMTX_BIN:-$(find /nix/store -maxdepth 4 -type f -name mediamtx -path '*/bin/*' 2>/dev/null | head -1)}"
 # SDL dummy audio so ffplay survives headless (no sound card in CI/this shell).
-SDL_AUDIODRIVER=dummy \
+SDL_AUDIODRIVER=dummy RADIO_HEARTBEAT_MS=150 \
 RADIO_MEDIAMTX_BIN="$MTX" RADIO_HLS_PORT=18888 RADIO_API_PORT=19997 \
 RADIO_RTMP_PORT=11935 RADIO_WHIP_PORT=18889 RADIO_SRT_PORT=18890 \
   /tmp/radio_direct_test

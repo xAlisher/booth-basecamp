@@ -137,11 +137,13 @@ UI: Listen tab starts discovery on open, polls `getStations()` (2s `Timer`), ren
 
 ### Epic F — Liveness  (P1)
 
-**#10 — Heartbeat re-announce (15s).** Host re-publishes announce every 15s while live (`QTimer`).
-- **Headless test:** observe ≥2 announces within 35s on the topic (Tier-2) or assert timer cadence via injectable clock.
+**#10 — Heartbeat re-announce (15s).** ✅ **DONE (2026-06-10).** A `QTimer` (interval `RADIO_HEARTBEAT_MS`,
+default 15000) started in `startStream`, stopped in `stopStream`, fires `announceOnce()`.
+- **Proof:** direct-test ALL PASS — with a 150ms interval, `announceAttemptCount` grows ≥3 over a 1.2s event loop while live.
 
-**#11 — TTL expiry (45s).** Listener drops stations not heard within 45s; emits `stationsChanged`.
-- **Headless test:** inject an announce, advance mock clock >45s without re-announce → station removed from `getStations()`.
+**#11 — TTL expiry (45s).** ✅ **DONE (2026-06-10).** `getStations()` lazily prunes stations whose
+`_lastSeen` is older than `RADIO_TTL_MS` (default 45000 = 3 missed 15s beats); emits `stationsChanged` on prune.
+- **Proof:** direct-test ALL PASS — with TTL 200ms, an ingested station is present then pruned after 350ms.
 
 **#12 — `+ Add topic` (private streams).** Field subscribes to an arbitrary topic; unlisted stations
 join the directory view; de-dupe across topics.

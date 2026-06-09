@@ -7,6 +7,7 @@
 #include <QSet>
 #include <QMap>
 #include <QJsonObject>
+#include <QTimer>
 #include "radio_interface.h"
 
 class LogosAPI;
@@ -60,6 +61,7 @@ public:
     // status then publishes (called by the #10 heartbeat timer and by tests). Not IPC API.
     QString buildAnnouncePayload(int seq) const;
     QString announceOnce();
+    int     announceAttemptCount() const { return m_announceAttempts; }  // #10 test seam
 
 signals:
     void eventResponse(const QString& eventName, const QVariantList& args);
@@ -90,10 +92,12 @@ private:
     QString   m_path;        // random MediaMTX path = OBS stream key (v1; real publish auth → #18)
     QString   m_runtimeDir;  // per-stream temp dir holding mediamtx.yml
     QString   m_lastStreamState;  // for streamStatusChanged edge detection (#4)
-    // Host announce (#6)
+    // Host announce (#6) + heartbeat (#10)
     qint64    m_startedAt = 0;
     int       m_announceSeq = 0;
+    int       m_announceAttempts = 0;
     QString   m_announceTopic, m_hostLabel;
+    QTimer    m_heartbeat;
 
     // Discovery (#5)
     LogosAPIClient* m_delivery = nullptr;

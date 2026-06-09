@@ -43,8 +43,8 @@ Nix only sees git-tracked files — `git add -A` before building.
 | 7 | Stream UI | Setup card + start/stop | P0 | done |
 | 8 | Stream UI | Live status light | P0 | done |
 | 9 | Listen | Directory render + tap-to-play | P0 | done |
-| 10 | Liveness | Heartbeat re-announce (15s) | P1 | todo |
-| 11 | Liveness | TTL expiry (45s) | P1 | todo |
+| 10 | Liveness | Heartbeat re-announce (15s) | P1 | done |
+| 11 | Liveness | TTL expiry (45s) | P1 | done |
 | 12 | Liveness | + Add topic (private streams) | P1 | todo |
 | 13 | Player | Player controls (pause/resume/vol) | P1 | todo |
 | 14 | Polish | Empty + transitional states | P1 | todo |

@@ -38,6 +38,8 @@ QString notImplemented(const QString& method)
 RadioModulePlugin::RadioModulePlugin(QObject* parent) : QObject(parent)
 {
     qDebug() << "RadioModulePlugin: constructed";
+    // #10 heartbeat: re-announce on a fixed interval while streaming.
+    connect(&m_heartbeat, &QTimer::timeout, this, [this]{ announceOnce(); });
 }
 
 RadioModulePlugin::~RadioModulePlugin()
@@ -180,6 +182,7 @@ QString RadioModulePlugin::startStream(const QString& configJson)
         {"srtUrl",  QStringLiteral("srt://%1:%2?streamid=publish:%3").arg(ip).arg(srt).arg(m_path)},
         {"hlsUrl",  QStringLiteral("http://%1:%2/%3/index.m3u8").arg(ip).arg(hls).arg(m_path)},
     };
+    m_heartbeat.start(port("RADIO_HEARTBEAT_MS", 15000));  // #10 re-announce while live
     qDebug() << "RadioModulePlugin: stream started, path" << m_path;
     emit eventResponse("streamStarted", QVariantList() << m_path);
     return QString::fromUtf8(QJsonDocument(card).toJson(QJsonDocument::Compact));
@@ -188,6 +191,7 @@ QString RadioModulePlugin::startStream(const QString& configJson)
 QString RadioModulePlugin::stopStream()
 {
     if (!m_mediamtx) return err("not_streaming");
+    m_heartbeat.stop();
     killMediaMtx();
     if (!m_runtimeDir.isEmpty()) QDir(m_runtimeDir).removeRecursively();
     qDebug() << "RadioModulePlugin: stream stopped";
@@ -330,8 +334,19 @@ void RadioModulePlugin::ingestAnnounce(const QString& base64Payload)
 
 QString RadioModulePlugin::getStations()
 {
+    // #11 TTL: drop stations not re-heard within the window (default 45s = 3 missed 15s beats).
+    const qint64 ttl = port("RADIO_TTL_MS", 45000);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    bool pruned = false;
+    for (auto it = m_stations.begin(); it != m_stations.end(); ) {
+        if (now - static_cast<qint64>(it.value().value("_lastSeen").toDouble()) > ttl) {
+            it = m_stations.erase(it); pruned = true;
+        } else { ++it; }
+    }
+    if (pruned) emit eventResponse("stationsChanged", QVariantList() << "expired");
+
     QJsonArray arr;
-    for (const QJsonObject& s : m_stations) arr.append(s);  // #11 will prune by _lastSeen here
+    for (const QJsonObject& s : m_stations) arr.append(s);
     return QString::fromUtf8(QJsonDocument(QJsonObject{{"ok", true}, {"stations", arr}})
                                  .toJson(QJsonDocument::Compact));
 }
@@ -354,6 +369,7 @@ QString RadioModulePlugin::buildAnnouncePayload(int seq) const
 
 QString RadioModulePlugin::announceOnce()
 {
+    ++m_announceAttempts;  // #10 heartbeat observability (counts every call incl. timer fires)
     auto result = [](bool announced, const QString& reason, const QString& payload, int seq) {
         QJsonObject r{{"ok", true}, {"announced", announced}};
         if (!reason.isEmpty())  r["reason"]  = reason;

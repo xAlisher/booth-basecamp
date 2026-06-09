@@ -10,6 +10,8 @@
 #include <QJsonArray>
 #include <QProcess>
 #include <QThread>
+#include <QEventLoop>
+#include <QTimer>
 #include <cstdio>
 
 static int fails = 0;
@@ -72,6 +74,14 @@ int main(int argc, char** argv) {
         ok(ann.value("reason").toString() == "no_delivery" && schema,
            "announce gate passes when live + payload has full schema");
     }
+
+    // --- #10 heartbeat: while live, the timer re-fires announceOnce (RADIO_HEARTBEAT_MS set small) ---
+    {
+        auto spin = [](int ms){ QEventLoop l; QTimer::singleShot(ms, &l, &QEventLoop::quit); l.exec(); };
+        const int before = p.announceAttemptCount();
+        spin(1200);
+        ok(p.announceAttemptCount() - before >= 3, "heartbeat re-announces while live");
+    }
     push.kill(); push.waitForFinished(2000);
 
     // --- stopStream tears it down ---
@@ -95,6 +105,21 @@ int main(int argc, char** argv) {
         const QJsonArray sa = st.value("stations").toArray();
         bool found = false; for (const auto v : sa) if (v.toObject().value("path").toString() == "abc123") found = true;
         ok(sa.size() == 1 && found, "ingestAnnounce: valid station stored, malformed dropped");
+    }
+
+    // --- #11 TTL: a station drops out once it isn't re-heard within the window ---
+    {
+        qputenv("RADIO_TTL_MS", "200");
+        p.ingestAnnounce(b64("{\"v\":1,\"name\":\"Expiring\",\"path\":\"ttltest\",\"host\":\"bob\",\"hlsUrl\":\"http://h/x\"}"));
+        auto hasTtl = [&]{
+            const QJsonArray sa = QJsonDocument::fromJson(p.getStations().toUtf8()).object().value("stations").toArray();
+            for (const auto v : sa) if (v.toObject().value("path").toString() == "ttltest") return true;
+            return false;
+        };
+        ok(hasTtl(), "TTL: station present before expiry");
+        QThread::msleep(350);  // > 200ms TTL
+        ok(!hasTtl(), "TTL: station pruned after expiry");
+        qunsetenv("RADIO_TTL_MS");
     }
 
     // --- #9 playback: play a generated tone via ffplay → playing; stop → stopped ---
