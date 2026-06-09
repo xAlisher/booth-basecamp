@@ -80,6 +80,7 @@ private:
     QString  directoryTopic() const;       // well-known public directory topic
     bool     subscribeTopic(const QString& topic);
     bool     ensureDeliveryNode();         // idempotent delivery_module getClient + createNode + start
+    void     killPlayer();                 // stop + reap the ffplay process (#9)
 
     // NB: do NOT declare a LogosAPI* member — initLogos must set the base PluginInterface::logosAPI,
     // which ModuleProxy reads for cross-module IPC (skills: logosapi-member-no-redeclare, initlogos-no-override).
@@ -101,7 +102,10 @@ private:
     bool            m_discovering = false;
     QSet<QString>   m_subscribedTopics;
     QMap<QString, QJsonObject> m_stations;  // keyed by path; value carries "_lastSeen" ms (TTL → #11)
-    // Issue #9: PlayerManager.
+
+    // Listener playback (#9) — ffplay subprocess (Qt Multimedia absent; skill ffplay-subprocess-player).
+    QProcess* m_player = nullptr;
+    QString   m_playingStation, m_playingUrl;
 };
 
 #endif // RADIO_MODULE_PLUGIN_H

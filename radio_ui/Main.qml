@@ -30,6 +30,34 @@ Item {
                                                  : "#8b949e"
     }
 
+    // ---- Listen (#9) ----
+    property var stations: []
+    property string playingName: ""
+    property bool discoveryStarted: false
+
+    Timer {  // poll the live directory while the Listen tab is open
+        interval: 2000; repeat: true
+        running: tabs.currentIndex === 1
+        onTriggered: { var r = root.callParse("getStations", []); if (r && r.ok) root.stations = r.stations || [] }
+    }
+    Connections {
+        target: tabs
+        function onCurrentIndexChanged() {
+            if (tabs.currentIndex === 1 && !root.discoveryStarted) {
+                root.callParse("startDiscovery", []); root.discoveryStarted = true
+            }
+        }
+    }
+    function playStation(s) {
+        root.callParse("play", [s.streamUrl, s.name || ""])
+        root.playingName = s.name || s.path
+    }
+    function uptime(startedAtMs) {
+        if (!startedAtMs) return ""
+        var sec = Math.floor((Date.now() - startedAtMs) / 1000)
+        return sec < 60 ? sec + "s" : sec < 3600 ? Math.floor(sec/60) + "m" : Math.floor(sec/3600) + "h"
+    }
+
     function callParse(method, args) {
         try {
             var raw = logos.callModule("radio_module", method, args || [])
@@ -159,13 +187,49 @@ Item {
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 24
-                    spacing: 16
+                    spacing: 12
                     Label { text: "Listen"; font.pixelSize: 22; font.bold: true }
-                    Label {
-                        text: "Live stations appear here as heartbeats arrive (#9). Tap to play."
-                        wrapMode: Text.WordWrap; Layout.fillWidth: true; opacity: 0.7
+
+                    ListView {
+                        id: stationList
+                        Layout.fillWidth: true; Layout.fillHeight: true
+                        clip: true; spacing: 6
+                        model: root.stations
+                        delegate: ItemDelegate {
+                            required property var modelData
+                            width: ListView.view ? ListView.view.width : 0
+                            onClicked: root.playStation(modelData)
+                            contentItem: ColumnLayout {
+                                spacing: 2
+                                Label { text: modelData.name || "Unknown"; font.bold: true }
+                                Label {
+                                    text: (modelData.host || "") + " · " + root.uptime(modelData.startedAt)
+                                    opacity: 0.7; font.pixelSize: 12
+                                }
+                            }
+                        }
                     }
-                    Item { Layout.fillHeight: true }
+                    Label {
+                        visible: root.stations.length === 0
+                        text: "No live stations yet…"; opacity: 0.6
+                        Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+                    }
+
+                    RowLayout {  // now-playing
+                        visible: root.playingName.length > 0
+                        Layout.fillWidth: true
+                        Label { text: "▶ " + root.playingName; Layout.fillWidth: true; elide: Text.ElideRight }
+                        Button { text: "Stop"; onClicked: { root.callParse("stop", []); root.playingName = "" } }
+                    }
+
+                    RowLayout {  // + add private topic
+                        Layout.fillWidth: true
+                        TextField { id: topicField; Layout.fillWidth: true; placeholderText: "Add a private topic" }
+                        Button {
+                            text: "Add"; enabled: topicField.text.length > 0
+                            onClicked: { root.callParse("addTopic", [topicField.text]); topicField.text = "" }
+                        }
+                    }
                 }
             }
         }

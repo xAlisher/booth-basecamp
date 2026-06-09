@@ -127,11 +127,13 @@ OBS…" (grey), receiving→"Receiving stream…" (amber), live→"🔴 Live (an
 
 ### Epic E — Listen tab + playback  (P0→P1)
 
-**#9 — Listen tab: directory render + tap-to-play.** Subscribe to directory topic on tab open;
-`getStations()` returns the live list; render name/host/uptime. Tap → `play(hlsUrl)` → `ffplay`.
-- Reuse: `ffplay-subprocess-player` (PlayerManager), soulseek `PlayerBar.qml`.
-- **Headless test (core):** `play(<local test m3u8 or audio>)` → `getPlayerStatus()` reports `playing`;
-  `stop()` → `stopped`. **UI test:** seed mocked stations → assert rows render; tap → backend `play` called.
+**#9 — Listen tab: directory render + tap-to-play.** ✅ **DONE (2026-06-10).** Backend: `play(hlsUrl,name)`
+spawns `ffplay -nodisp -autoexit` (skill `ffplay-subprocess-player`); `stop()`/`getPlayerStatus()`.
+UI: Listen tab starts discovery on open, polls `getStations()` (2s `Timer`), renders a `ListView`
+(name / host · uptime), tap → `play(streamUrl)`, now-playing bar + Stop, + add-topic field.
+- **Proof:** direct-test ALL PASS — `play` → ffplay running, `stop` → stopped (SDL dummy audio for headless).
+  integration-test passes — Listen-tab elements instantiate. Tap-to-play with live rows needs
+  delivery_module announces (cross-machine demo).
 
 ### Epic F — Liveness  (P1)
 
@@ -211,6 +213,8 @@ scorched-earth P2P notes: distinct `SCORCHED_TCP_PORT`-style node separation if 
 | getStreamStatus: waiting (no pub) → live (after ffmpeg push) | ✅ (#4 2026-06-10, direct-test ALL PASS) | | | |
 | ingestAnnounce: base64 decode + parse + self-echo/malformed filter | ✅ (#5 2026-06-10, direct-test) | | | |
 | announce schema + gating (not_live → gate passes when live) | ✅ (#6 2026-06-10, direct-test) | | | |
+| play (ffplay) → playing, stop → stopped | ✅ (#9 2026-06-10, direct-test) | | | |
+| Listen-tab UI elements instantiate | ✅ (#9 2026-06-10, integration-test) | | | |
 | delivery_module wiring (createNode/subscribe/onEvent) | | | ✅ (#5 builds + module loads) | |
 | live delivery_module send/receive round-trip | | | | ⚠️ needs AppImage (2 nodes; logoscore gates returns) |
 | radio_module loads + dispatches ping (logoscore, isolated dir) | ✅ (#1 2026-06-10: registry connect + "Method call successful", same as canonical capability_module) | | | |

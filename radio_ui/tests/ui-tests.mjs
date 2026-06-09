@@ -25,7 +25,12 @@ test("radio_ui: status light instantiates with default-state label (#8)", async 
   // visibility, so this proves the status label exists/binds; live transitions need the real app.
   await app.expectTexts(["Waiting for OBS…"]);
 });
-// Issue #9:  Listen tab renders seeded stations; tap calls radio_module.play
+test("radio_ui: Listen-tab elements instantiate (#9)", async (app) => {
+  // empty-state label + Add button (station rows + play need live backend data → real app)
+  await app.expectTexts(["Listen", "No live stations yet…", "Add"]);
+});
+
+// Tap-to-play with live stations needs delivery_module announces → cross-machine demo.
 // Note: the Start->OBS-card click-through spawns MediaMTX + needs a non-gated backend, so it is
 // verified in the running app / cross-machine demo, not this hermetic test.
 

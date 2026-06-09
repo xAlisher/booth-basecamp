@@ -97,6 +97,22 @@ int main(int argc, char** argv) {
         ok(sa.size() == 1 && found, "ingestAnnounce: valid station stored, malformed dropped");
     }
 
+    // --- #9 playback: play a generated tone via ffplay → playing; stop → stopped ---
+    {
+        QProcess gen;
+        gen.start("ffmpeg", {"-y","-f","lavfi","-i","sine=frequency=440:duration=30",
+                             "-loglevel","error","/tmp/radio_test_tone.wav"});
+        gen.waitForFinished(10000);
+        p.play("/tmp/radio_test_tone.wav", "Tone FM");
+        QThread::msleep(900);
+        auto pstate = [&]{ return QJsonDocument::fromJson(p.getPlayerStatus().toUtf8())
+                               .object().value("state").toString(); };
+        ok(pstate() == "playing", "play: ffplay running");
+        p.stop();
+        QThread::msleep(400);
+        ok(pstate() == "stopped", "stop: player stopped");
+    }
+
     printf("=== %s ===\n", fails ? "FAILURES" : "ALL PASS");
     return fails ? 1 : 0;
 }

@@ -44,6 +44,7 @@ RadioModulePlugin::~RadioModulePlugin()
 {
     qDebug() << "RadioModulePlugin: destroyed";
     killMediaMtx();  // never leak the origin process
+    killPlayer();
 }
 
 void RadioModulePlugin::initLogos(LogosAPI* api)
@@ -375,9 +376,57 @@ QString RadioModulePlugin::announceOnce()
     return result(true, QString(), payload, seq);
 }
 
-QString RadioModulePlugin::play(const QString&, const QString&) { return notImplemented("play"); }       // #9
+// ---------------------------------------------------------------------------
+// #9 — listener playback via ffplay subprocess (Qt Multimedia not in AppImage).
+// ---------------------------------------------------------------------------
+
+void RadioModulePlugin::killPlayer()
+{
+    if (!m_player) return;
+    m_player->terminate();
+    if (!m_player->waitForFinished(2000)) m_player->kill();
+    m_player->deleteLater();
+    m_player = nullptr;
+}
+
+QString RadioModulePlugin::play(const QString& hlsUrl, const QString& stationName)
+{
+    if (hlsUrl.isEmpty()) return err("no_url");
+    killPlayer();
+    const QString bin = qEnvironmentVariable("RADIO_FFPLAY_BIN", QStringLiteral("ffplay"));
+    m_player = new QProcess(this);
+    m_player->start(bin, QStringList() << "-nodisp" << "-autoexit" << "-loglevel" << "error" << hlsUrl);
+    if (!m_player->waitForStarted(5000)) {
+        qWarning() << "RadioModulePlugin: ffplay failed:" << m_player->errorString();
+        killPlayer();
+        return err("ffplay_failed");
+    }
+    m_playingStation = stationName;
+    m_playingUrl = hlsUrl;
+    emit eventResponse("playerStatusChanged", QVariantList() << "playing" << stationName);
+    return ok();
+}
+
+QString RadioModulePlugin::stop()
+{
+    if (!m_player) return err("not_playing");
+    killPlayer();
+    m_playingStation.clear();
+    m_playingUrl.clear();
+    emit eventResponse("playerStatusChanged", QVariantList() << "stopped");
+    return ok();
+}
+
+QString RadioModulePlugin::getPlayerStatus()
+{
+    const bool playing = m_player && m_player->state() != QProcess::NotRunning;
+    return QString::fromUtf8(QJsonDocument(QJsonObject{
+        {"ok", true},
+        {"state", playing ? "playing" : "stopped"},
+        {"station", m_playingStation}
+    }).toJson(QJsonDocument::Compact));
+}
+
 QString RadioModulePlugin::pause()                      { return notImplemented("pause"); }              // #13
 QString RadioModulePlugin::resume()                     { return notImplemented("resume"); }             // #13
-QString RadioModulePlugin::stop()                       { return notImplemented("stop"); }               // #13
 QString RadioModulePlugin::setVolume(int)               { return notImplemented("setVolume"); }          // #13
-QString RadioModulePlugin::getPlayerStatus()            { return notImplemented("getPlayerStatus"); }    // #9
