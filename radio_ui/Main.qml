@@ -87,7 +87,7 @@ Item {
         return sec < 60 ? sec + "s" : sec < 3600 ? Math.floor(sec/60) + "m" : Math.floor(sec/3600) + "h"
     }
     function stateLabel() {
-        return root.streamState === "live" ? "🔴 Live (announcing)"
+        return root.streamState === "live" ? "Live (announcing)"
              : root.streamState === "receiving" ? "Receiving stream…" : "Waiting for OBS…"
     }
     function stateColor() {
