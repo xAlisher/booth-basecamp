@@ -55,6 +55,11 @@ test("radio_ui: Tor privacy toggle instantiates, onion default (T7)", async (app
   await app.expectTexts(["Privacy", "Onion (Tor)", "Direct (LAN)"]);
 });
 
+test("radio_ui: activity log panel instantiates (#12)", async (app) => {
+  // Append-only timestamped event log with copy/clear (qml-activitylog-component).
+  await app.expectTexts(["Activity", "Clear"]);
+});
+
 // Tap-to-play with live stations needs delivery_module announces → cross-machine demo.
 // Note: the Start->OBS-card click-through spawns MediaMTX + needs a non-gated backend, so it is
 // verified in the running app / cross-machine demo, not this hermetic test.

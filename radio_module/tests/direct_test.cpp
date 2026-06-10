@@ -46,6 +46,9 @@ int main(int argc, char** argv) {
     ok(fields, "card has all ingest fields");
     const QString path1 = card.value("path").toString();
     ok(!path1.isEmpty(), "path minted");
+    // #11: getStreamCard rebuilds the same card (the UI uses it to rehydrate after a restart).
+    ok(QJsonDocument::fromJson(p.getStreamCard().toUtf8()).object().value("path").toString() == path1,
+       "getStreamCard returns the active card (#11)");
 
     // --- #2 spawn: MediaMTX actually comes up under module control ---
     QThread::msleep(2500);

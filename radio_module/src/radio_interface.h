@@ -34,9 +34,12 @@ public:
     Q_INVOKABLE virtual QString startStream(const QString& configJson) = 0;
     /** Stop origin + announce. @return {ok} (#2) */
     Q_INVOKABLE virtual QString stopStream() = 0;
-    /** Poll MediaMTX. @return {state:"idle"|"waiting"|"receiving"|"live", hlsUrl} (#4).
+    /** Poll MediaMTX. @return {state:"idle"|"waiting"|"receiving"|"live", hlsUrl, privacy, onion, onionReady} (#4).
      *  Also emits `streamStatusChanged`. */
     Q_INVOKABLE virtual QString getStreamStatus() = 0;
+    /** The OBS ingest card for the active stream, so the UI rehydrates after a restart (#11).
+     *  @return the same shape as startStream, or {ok:false,error:"not_streaming"}. */
+    Q_INVOKABLE virtual QString getStreamCard() = 0;
 
     // --- Discovery — Epic C/F ---
     /** delivery_module node status for the header pill. @return {ok, state:"offline"|"ready"|"connected", peerId} */

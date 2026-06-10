@@ -101,6 +101,8 @@ void RadioModulePlugin::initLogos(LogosAPI* api)
     qDebug() << "RadioModulePlugin: initLogos";
     // Start the delivery-health poll deferred (skill ipc-client-eager-init: don't getClient in initLogos directly).
     QTimer::singleShot(2500, this, [this]{ checkDeliveryHealth(); m_deliveryHealth.start(5000); });
+    // #11 — if a stream was active before a restart, re-spawn its origin with the same path/key.
+    QTimer::singleShot(1500, this, [this]{ resumeStreamIfPersisted(); });
     emit eventResponse("initialized", QVariantList() << "radio_module" << "0.1.0");
 }
 
@@ -252,26 +254,93 @@ QString RadioModulePlugin::startStream(const QString& configJson)
         if (!te.isEmpty()) return abort(te);
     }
 
+    m_heartbeat.start(port("RADIO_HEARTBEAT_MS", 15000));  // #10 re-announce while live
+    saveStreamState();  // #11 persist identity so the stream survives a Basecamp restart
+    qDebug() << "RadioModulePlugin: stream started, path" << m_path;
+    emit eventResponse("streamStarted", QVariantList() << m_path);
+    return QString::fromUtf8(QJsonDocument(buildCard()).toJson(QJsonDocument::Compact));
+}
+
+// The OBS ingest card — derived from m_path/m_streamKey/ports, so it can be rebuilt after a restart.
+QJsonObject RadioModulePlugin::buildCard() const
+{
     // Onion mode: OBS is local to MediaMTX, so the ingest card uses loopback — never expose lanIp()
     // on any surface, including the host's own card (Senty FINDING-2).
     const QString ip = (m_privacy == "onion") ? QStringLiteral("127.0.0.1") : lanIp();
     const int hls = port("RADIO_HLS_PORT", 8888), whip = port("RADIO_WHIP_PORT", 8889),
               rtmp = port("RADIO_RTMP_PORT", 1935), srt = port("RADIO_SRT_PORT", 8890);
     const QString auth = QStringLiteral("user=publisher&pass=%1").arg(m_streamKey);
-
-    QJsonObject card{
-        {"ok", true},
-        {"path", m_path},
+    return QJsonObject{
+        {"ok", true}, {"path", m_path},
         {"streamKey", QStringLiteral("%1?%2").arg(m_path, auth)},  // OBS RTMP "Stream Key" (path + auth)
         {"whipUrl", QStringLiteral("http://%1:%2/%3/whip?%4").arg(ip).arg(whip).arg(m_path).arg(auth)},
         {"rtmpUrl", QStringLiteral("rtmp://%1:%2").arg(ip).arg(rtmp)},  // OBS RTMP "Server"
         {"srtUrl",  QStringLiteral("srt://%1:%2?streamid=publish:%3:publisher:%4").arg(ip).arg(srt).arg(m_path).arg(m_streamKey)},
-        {"hlsUrl",  QStringLiteral("http://%1:%2/%3/index.m3u8").arg(ip).arg(hls).arg(m_path)},  // public (read-only)
+        {"hlsUrl",  QStringLiteral("http://%1:%2/%3/index.m3u8").arg(ip).arg(hls).arg(m_path)},
+        {"name", m_streamName}, {"description", m_description}, {"privacy", m_privacy},
     };
-    m_heartbeat.start(port("RADIO_HEARTBEAT_MS", 15000));  // #10 re-announce while live
-    qDebug() << "RadioModulePlugin: stream started, path" << m_path;
+}
+
+// #11 — the UI rehydrates its OBS card from this after a restart (when a stream auto-resumed).
+QString RadioModulePlugin::getStreamCard()
+{
+    if (!m_mediamtx) return err("not_streaming");
+    return QString::fromUtf8(QJsonDocument(buildCard()).toJson(QJsonDocument::Compact));
+}
+
+// --- #11 stream-state persistence (survives a Basecamp restart) ---
+QString RadioModulePlugin::stateFile() const
+{
+    return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+           + "/radio_module/station.json";  // per-profile (respects XDG_DATA_HOME)
+}
+
+void RadioModulePlugin::saveStreamState() const
+{
+    const QJsonObject st{
+        {"name", m_streamName}, {"visibility", m_visibility}, {"description", m_description},
+        {"privacy", m_privacy}, {"path", m_path}, {"streamKey", m_streamKey},
+        {"startedAt", m_startedAt}, {"announceTopic", m_announceTopic}, {"hostLabel", m_hostLabel}
+    };
+    const QString f = stateFile();
+    QDir().mkpath(QFileInfo(f).absolutePath());
+    QFile out(f);
+    if (out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        out.write(QJsonDocument(st).toJson(QJsonDocument::Compact)); out.close();
+    }
+}
+
+void RadioModulePlugin::clearStreamState() const { QFile::remove(stateFile()); }
+
+void RadioModulePlugin::resumeStreamIfPersisted()
+{
+    if (m_mediamtx) return;
+    QFile in(stateFile());
+    if (!in.open(QIODevice::ReadOnly)) return;
+    const QJsonObject st = QJsonDocument::fromJson(in.readAll()).object(); in.close();
+    const QString path = st.value("path").toString();
+    if (path.isEmpty()) return;
+    m_streamName    = st.value("name").toString();
+    m_visibility    = st.value("visibility").toString(QStringLiteral("public"));
+    m_description   = st.value("description").toString();
+    m_privacy       = st.value("privacy").toString(QStringLiteral("onion"));
+    m_path          = path;
+    m_streamKey     = st.value("streamKey").toString();
+    m_startedAt     = st.value("startedAt").toVariant().toLongLong();
+    m_announceTopic = st.value("announceTopic").toString();
+    m_hostLabel     = st.value("hostLabel").toString(QStringLiteral("anonymous"));
+    m_runtimeDir    = QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/radio_module/" + m_path;
+    m_announceSeq   = 0;
+    // Re-spawn the origin with the SAME path + key so OBS reconnects without reconfiguration.
+    const QString configPath = writeMediaMtxConfig();
+    if (configPath.isEmpty() || !spawnMediaMtx(configPath).isEmpty()) {
+        if (!m_runtimeDir.isEmpty()) QDir(m_runtimeDir).removeRecursively();
+        clearStreamState(); m_path.clear(); return;
+    }
+    if (m_privacy == "onion") { m_onion.clear(); m_onionReady = false; ensureTorHost(); }
+    m_heartbeat.start(port("RADIO_HEARTBEAT_MS", 15000));
+    qDebug() << "RadioModulePlugin: resumed persisted stream" << m_path;
     emit eventResponse("streamStarted", QVariantList() << m_path);
-    return QString::fromUtf8(QJsonDocument(card).toJson(QJsonDocument::Compact));
 }
 
 QString RadioModulePlugin::stopStream()
@@ -294,6 +363,7 @@ QString RadioModulePlugin::stopStream()
     m_path.clear(); m_streamKey.clear(); m_streamName.clear(); m_lastStreamState.clear();
     m_announceTopic.clear(); m_startedAt = 0; m_announceSeq = 0;
     m_privacy = QStringLiteral("public"); m_onion.clear(); m_onionReady = false; m_onionError.clear();
+    clearStreamState();  // #11 — don't auto-resume a deliberately-stopped stream
     return ok();
 }
 

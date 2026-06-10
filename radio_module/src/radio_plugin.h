@@ -45,6 +45,7 @@ public:
     Q_INVOKABLE QString startStream(const QString& configJson) override;
     Q_INVOKABLE QString stopStream() override;
     Q_INVOKABLE QString getStreamStatus() override;
+    Q_INVOKABLE QString getStreamCard() override;
     Q_INVOKABLE QString getDeliveryStatus() override;
     Q_INVOKABLE QString startDiscovery() override;
     Q_INVOKABLE QString addTopic(const QString& topic) override;
@@ -77,6 +78,12 @@ private:
     QString  writeMediaMtxConfig() const;  // returns config path, or "" on failure
     QString  spawnMediaMtx(const QString& configPath);  // "" ok, else an error code (#15)
     void     killMediaMtx();
+    // #11 — OBS card builder + stream-state persistence (survives a Basecamp restart)
+    QJsonObject buildCard() const;
+    QString  stateFile() const;
+    void     saveStreamState() const;
+    void     clearStreamState() const;
+    void     resumeStreamIfPersisted();
     QString  lanIp() const;                // first non-loopback IPv4, else 127.0.0.1
     static QString randomHex(int bytes);
     int      port(const char* envVar, int fallback) const;
