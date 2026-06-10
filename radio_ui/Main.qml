@@ -35,7 +35,6 @@ Item {
     property string playingName:  ""
     property bool   discoveryStarted: false
     property int    volume:       75
-    property string lastError:    ""
     property string deliveryState: "offline"   // offline | ready | connected
     property string deliveryPeerId: ""
 
@@ -67,8 +66,9 @@ Item {
     }
     function call(method, args) {
         var r = callParse(method, args)
-        if (!r) root.lastError = "No response from radio_module."
-        else if (r.ok === false) root.lastError = errorMessage(r.error)
+        // All errors go to the activity log — no banners/toasts.
+        if (!r) logEvent("No response from radio_module.", "error")
+        else if (r.ok === false) logEvent(errorMessage(r.error), "error")
         return r
     }
 
@@ -154,7 +154,6 @@ Item {
     onOnionReadyChanged: if (onionReady) logEvent("Onion ready · " + onionAddr, "success")   // the tor link
     onOnionErrorChanged: if (onionError.length > 0) logEvent("Tor: " + onionError, "error")
     onOnionAddrChanged: if (onionAddr.length > 0 && !onionReady) logEvent("Tor: publishing descriptor…", "warning")
-    onLastErrorChanged: if (lastError.length > 0) logEvent(lastError, "error")
     onPlayingNameChanged: logEvent(playingName.length > 0 ? "▶ Playing " + playingName : "■ Stopped playback", "info")
 
     function copyText(t) { clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); clipHelper.text = "" }
@@ -166,14 +165,26 @@ Item {
         onTriggered: { var r = root.callParse("getDeliveryStatus", []);
             if (r && r.ok) { root.deliveryState = r.state; root.deliveryPeerId = r.peerId || "" } }
     }
-    Timer {  // origin status while streaming (#8)
-        interval: 1500; repeat: true; running: root.streamCard !== null
-        onTriggered: { var r = root.callParse("getStreamStatus", [])
-            if (r && r.state) { root.streamState = r.state
+    Timer {  // origin status + card sync (#8/#11) — always on, keeps the UI in lock-step with the backend
+        interval: 1500; repeat: true; running: true; triggeredOnStart: true
+        onTriggered: {
+            var r = root.callParse("getStreamStatus", [])
+            if (!r) return
+            var streaming = r.state && r.state !== "idle"
+            // Backend broadcasting but the UI has no card (restart / auto-resume / module reopened) →
+            // rehydrate, so the Stream form is never shown while a station is live (no "already broadcasting").
+            if (streaming && root.streamCard === null) {
+                var c = root.callParse("getStreamCard", [])
+                if (c && c.ok) { root.streamCard = c; root.streamPrivacy = c.privacy || "public" }
+            } else if (!streaming && root.streamCard !== null) {
+                root.streamCard = null   // backend stopped (stream ended / stopped elsewhere) → drop stale card
+            }
+            if (r.state) { root.streamState = r.state
                 if (r.privacy) root.streamPrivacy = r.privacy
                 if (r.onion !== undefined) root.onionAddr = r.onion
                 if (r.onionReady !== undefined) root.onionReady = r.onionReady
-                root.onionError = r.onionError || "" } }
+                root.onionError = r.onionError || "" }
+        }
     }
     Timer {  // live directory while on the Listen tab (#9)
         interval: 2000; repeat: true; running: tabs.currentIndex === 1
@@ -285,21 +296,7 @@ Item {
             }
         }
 
-        // ── Error banner (#15) ────────────────────────────────────────────────
-        Rectangle {
-            Layout.fillWidth: true; Layout.leftMargin: 16; Layout.rightMargin: 16
-            color: "#3a1d1d"; radius: 6
-            visible: root.lastError.length > 0
-            implicitHeight: visible ? errRow.implicitHeight + 14 : 0
-            RowLayout {
-                id: errRow
-                anchors.fill: parent; anchors.margins: 7; spacing: 8
-                Label { text: "⚠"; color: "#ff9a9a" }
-                Label { text: root.lastError; color: "#ff9a9a"; Layout.fillWidth: true; wrapMode: Text.WordWrap }
-                Button { text: "✕"; flat: true; onClicked: root.lastError = ""
-                    contentItem: Text { text: "✕"; color: "#ff9a9a" } background: null }
-            }
-        }
+        // No error banner — all errors go to the activity log (#12).
 
         // ── Tabs ──────────────────────────────────────────────────────────────
         TabBar {
