@@ -92,9 +92,15 @@ private:
     void     killPlayer();                 // stop + reap the ffplay process (#9)
     QString  startFfplay();                // (re)launch ffplay on m_playingUrl; "" ok else error code
     // --- Tor onion mode (epic: hide the streamer's IP) ---
-    bool     ensureTor(bool withHiddenService);  // spawn/lifecycle tor (SocksPort [+ HiddenService])
-    void     killTor();
-    void     pollOnionStatus();                  // read .onion hostname + detect descriptor publish
+    // Two independent tor processes so host (HiddenService) and listener (SOCKS) lifecycles can't
+    // tear each other down (Senty ISSUE-2). Host runs SocksPort 0; listener owns the SOCKS port.
+    QString  ensureTorHost();    // hidden service for MediaMTX; "" ok else an error code
+    QString  ensureTorListen();  // SOCKS proxy for .onion playback; "" ok else an error code
+    // Shared spawn: write torrc into dir (0700), start, verify it didn't immediately die (ISSUE-3).
+    bool     startTorProc(QProcess*& proc, const QString& dir, const QString& cfg, QString& errOut);
+    void     killTorHost();
+    void     killTorListen();
+    void     pollOnionStatus();  // read .onion hostname + detect descriptor publish (bounded)
     // ffplay invocation, routed through torsocks for .onion hosts. Returns {program, args}.
     QPair<QString, QStringList> buildPlayerCommand(const QString& url) const;
     int      torSocksPort() const { return port("RADIO_TOR_SOCKS_PORT", 9050); }
@@ -131,12 +137,15 @@ private:
     QString   m_playingStation, m_playingUrl;
     int       m_volume = 75;      // #13 0–100; applied via ffplay -volume
 
-    // Tor onion mode — one tor serves SocksPort (listening) + HiddenService (hosting in onion mode)
-    QProcess* m_tor = nullptr;
+    // Tor onion mode — separate host (HiddenService) + listener (SOCKS) processes (Senty ISSUE-2)
+    QProcess* m_torHost = nullptr;     // SocksPort 0 + HiddenService (hosting in onion mode)
+    QProcess* m_torListen = nullptr;   // SocksPort (playing a .onion)
     QString   m_privacy = QStringLiteral("public");  // "public" | "onion"
     QString   m_onion;            // .onion host once the hidden-service hostname is known
-    QString   m_torDir;           // per-run tor DataDirectory + HiddenServiceDir root (temp)
+    QString   m_torHostDir;       // host tor DataDirectory + HiddenServiceDir root (temp)
+    QString   m_torListenDir;     // listener tor DataDirectory (temp)
     bool      m_onionReady = false;  // descriptor published → reachable by listeners
+    int       m_onionPollTicks = 0;  // bounded descriptor-publish poll (Senty ISSUE-3)
     QTimer    m_onionPublishPoll;    // polls tor.log for the descriptor upload
 };
 

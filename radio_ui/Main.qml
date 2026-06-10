@@ -299,13 +299,16 @@ Item {
                         RowLayout {
                             spacing: 16
                             ButtonGroup { id: privacyGroup }
-                            DarkRadio { id: directBtn; text: "Direct (IP)";  checked: true; ButtonGroup.group: privacyGroup }
-                            DarkRadio { id: onionBtn;  text: "Onion (Tor)";  ButtonGroup.group: privacyGroup }
+                            // Onion is the default — internet radio shouldn't be LAN-only or leak the host IP.
+                            DarkRadio { id: onionBtn;  text: "Onion (Tor)";  checked: true; ButtonGroup.group: privacyGroup }
+                            DarkRadio { id: directBtn; text: "Direct (LAN)"; ButtonGroup.group: privacyGroup }
                         }
                         Label {
-                            visible: privacyGroup.checkedButton === onionBtn
-                            Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: 11; color: root.textMuted
-                            text: "🧅 Listeners reach you over Tor — your IP stays hidden. First connect is slower (Tor descriptor publish)."
+                            Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: 11
+                            color: privacyGroup.checkedButton === onionBtn ? root.textMuted : root.warningYellow
+                            text: privacyGroup.checkedButton === onionBtn
+                                ? "🧅 Listeners reach you over Tor — your IP stays hidden and it works through NAT (no port-forwarding). First connect is slower."
+                                : "⚠ Direct mode is LAN-only and exposes your IP to listeners. Use it only for local/low-latency streams."
                         }
                         Label { text: "Description (optional)"; color: root.textSecondary; font.pixelSize: 12 }
                         DarkField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
@@ -381,8 +384,9 @@ Item {
                                 RowLayout {
                                     spacing: 6
                                     Label { text: modelData.name || "Unknown"; color: root.textPrimary; font.bold: true }
-                                    Label {  // over-Tor badge — host IP hidden
-                                        visible: (modelData.streamUrl || "").indexOf(".onion/") !== -1
+                                    Label {  // over-Tor badge — backend-computed flag (Senty ISSUE-1),
+                                             // consistent with playback routing; not a spoofable substring
+                                        visible: modelData._onion === true
                                         text: "🧅 Tor"; color: root.warningYellow; font.pixelSize: 10; font.bold: true
                                     }
                                 }

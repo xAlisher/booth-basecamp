@@ -50,9 +50,9 @@ test("radio_ui: failed start surfaces an error banner (#15)", async (app) => {
   );
 });
 
-test("radio_ui: Tor privacy toggle instantiates (T7)", async (app) => {
-  // Onion-mode privacy control on the Stream form (epic #1). expectTexts matches by text property.
-  await app.expectTexts(["Privacy", "Direct (IP)", "Onion (Tor)"]);
+test("radio_ui: Tor privacy toggle instantiates, onion default (T7)", async (app) => {
+  // Onion-mode privacy control on the Stream form (epic #1), onion is the default option.
+  await app.expectTexts(["Privacy", "Onion (Tor)", "Direct (LAN)"]);
 });
 
 // Tap-to-play with live stations needs delivery_module announces → cross-machine demo.
