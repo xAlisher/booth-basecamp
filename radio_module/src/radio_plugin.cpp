@@ -747,6 +747,9 @@ QPair<QString, QStringList> RadioModulePlugin::buildPlayerCommand(const QString&
     const QString ffplay = resolveBin(QStringLiteral("ffplay"), "RADIO_FFPLAY_BIN");
     QStringList ffargs;
     ffargs << "-nodisp" << "-autoexit" << "-loglevel" << "error" << "-infbuf";
+    // MediaMTX HLS gates playback with a `Secure` cookieCheck cookie; ffmpeg won't send a Secure cookie
+    // back over the http:// onion → the 302 redirect loops → "End of file" → no audio. Pre-supply it.
+    ffargs << "-cookies" << "cookieCheck=1; path=/";
     // #17 jitter buffer: start N segments behind the live edge (MediaMTX serves 1s mpegts segments)
     // so playback rides out Tor latency spikes; -infbuf lets ffplay hold the read-ahead.
     if (m_listenBufferSec > 0)
