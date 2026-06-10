@@ -4,6 +4,7 @@
 #include "logos_object.h"
 #include <QDebug>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRandomGenerator>
@@ -532,6 +533,16 @@ QString RadioModulePlugin::startFfplay()
     const QPair<QString, QStringList> cmd = buildPlayerCommand(m_playingUrl);
     m_player = new QProcess(this);
     dieWithParent(m_player);
+    if (isOnionUrl(m_playingUrl)) {
+        // Lock torsocks onto OUR tor SOCKS instance (Senty ISSUE-4) — without this, an overridden
+        // RADIO_TOR_SOCKS_PORT leaves torsocks on its compiled-in 9050 default, so ffplay could hit
+        // the wrong proxy or fail and fall back to a direct connection → listener IP leak.
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        env.insert("TORSOCKS_TOR_ADDRESS", "127.0.0.1");
+        env.insert("TORSOCKS_TOR_PORT", QString::number(torSocksPort()));
+        env.insert("TORSOCKS_ISOLATE_PID", "1");
+        m_player->setProcessEnvironment(env);
+    }
     m_player->start(cmd.first, cmd.second);
     if (!m_player->waitForStarted(5000)) {
         const bool notFound = m_player->error() == QProcess::FailedToStart;
@@ -544,8 +555,9 @@ QString RadioModulePlugin::startFfplay()
 
 // ---------------------------------------------------------------------------
 // Tor onion mode — hide the streamer's IP (epic: docs/plans/tor-onion.md).
-// One tor process serves SocksPort (listening over Tor) and, in onion host mode,
-// a HiddenService mapping :80 → the local MediaMTX HLS port.
+// TWO independent tor processes (Senty ISSUE-2): a host tor (SocksPort 0 + HiddenService
+// mapping :80 → the local MediaMTX HLS port) and a listener tor (SocksPort, for playing a
+// .onion via torsocks). Separate lifecycles so hosting and listening can't tear each other down.
 // ---------------------------------------------------------------------------
 
 QPair<QString, QStringList> RadioModulePlugin::buildPlayerCommand(const QString& url) const
@@ -566,14 +578,16 @@ bool RadioModulePlugin::startTorProc(QProcess*& proc, const QString& dir, const 
 {
     const QString bin = qEnvironmentVariable("RADIO_TOR_BIN", QStringLiteral("tor"));
     const QString dataDir = dir + "/data", torrc = dir + "/torrc";
-    if (!QDir().mkpath(dataDir)) { errOut = QStringLiteral("tor_dir_failed"); return false; }
+    // Remove the temp tree on any failure so a failed start leaves nothing on disk (Senty ISSUE-5).
+    auto fail = [&](const QString& code) { QDir(dir).removeRecursively(); errOut = code; return false; };
+    if (!QDir().mkpath(dataDir)) return fail(QStringLiteral("tor_dir_failed"));
     // Tor state (key material, data, log) must not be world-readable (Senty FINDING-4).
     const QFileDevice::Permissions ownerOnly =
         QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner;
     QFile::setPermissions(dir, ownerOnly);
     QFile::setPermissions(dataDir, ownerOnly);
     QFile f(torrc);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { errOut = QStringLiteral("tor_cfg_failed"); return false; }
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return fail(QStringLiteral("tor_cfg_failed"));
     f.write(cfg.toUtf8()); f.close();
 
     proc = new QProcess(this);
@@ -584,16 +598,14 @@ bool RadioModulePlugin::startTorProc(QProcess*& proc, const QString& dir, const 
         const bool notFound = proc->error() == QProcess::FailedToStart;
         qWarning() << "RadioModulePlugin: tor failed to start:" << proc->errorString();
         proc->deleteLater(); proc = nullptr;
-        errOut = notFound ? QStringLiteral("tor_not_found") : QStringLiteral("tor_start_failed");
-        return false;
+        return fail(notFound ? QStringLiteral("tor_not_found") : QStringLiteral("tor_start_failed"));
     }
     // Immediate exit ⇒ bad config or the SocksPort/HS port already in use (Senty ISSUE-3) — don't
     // proceed as if Tor were healthy, which would silently break the privacy transport.
     if (proc->waitForFinished(500)) {
         qWarning() << "RadioModulePlugin: tor exited immediately:" << proc->readAll();
         proc->deleteLater(); proc = nullptr;
-        errOut = QStringLiteral("tor_port_in_use");
-        return false;
+        return fail(QStringLiteral("tor_port_in_use"));
     }
     return true;
 }
@@ -616,7 +628,7 @@ QString RadioModulePlugin::ensureTorHost()
       << "HiddenServiceDir " << hsDir << "\n"
       << "HiddenServicePort 80 127.0.0.1:" << port("RADIO_HLS_PORT", 8888) << "\n";
     QString err;
-    if (!startTorProc(m_torHost, m_torHostDir, cfg, err)) return err;
+    if (!startTorProc(m_torHost, m_torHostDir, cfg, err)) { m_torHostDir.clear(); return err; }
     m_onion.clear(); m_onionReady = false; m_onionPollTicks = 0;
     m_onionPublishPoll.start(2000);
     return QString();
@@ -633,7 +645,7 @@ QString RadioModulePlugin::ensureTorListen()
       << "DataDirectory " << m_torListenDir << "/data\n"
       << "Log notice file " << m_torListenDir << "/tor.log\n";
     QString err;
-    if (!startTorProc(m_torListen, m_torListenDir, cfg, err)) return err;
+    if (!startTorProc(m_torListen, m_torListenDir, cfg, err)) { m_torListenDir.clear(); return err; }
     return QString();
 }
 
