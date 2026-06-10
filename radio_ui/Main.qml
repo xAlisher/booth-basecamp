@@ -166,6 +166,20 @@ Item {
             border.width: 1
         }
     }
+    // Native text layout (no overlap) + dark indicator; label recoloured via palette.
+    component DarkRadio: RadioButton {
+        id: dr
+        spacing: 8
+        palette.windowText: root.textPrimary
+        indicator: Rectangle {
+            implicitWidth: 18; implicitHeight: 18; radius: 9
+            x: dr.leftPadding; y: dr.topPadding + (dr.availableHeight - height) / 2
+            color: "transparent"; border.width: 2
+            border.color: dr.checked ? root.accentOrange : root.textMuted
+            Rectangle { anchors.centerIn: parent; width: 8; height: 8; radius: 4
+                color: root.accentOrange; visible: dr.checked }
+        }
+    }
 
     // ── Background ────────────────────────────────────────────────────────────
     Rectangle { anchors.fill: parent; color: root.bgPrimary }
@@ -260,10 +274,8 @@ Item {
                         RowLayout {
                             spacing: 16
                             ButtonGroup { id: visGroup }
-                            RadioButton { id: publicBtn; checked: true; ButtonGroup.group: visGroup
-                                contentItem: Text { text: "Public"; color: root.textPrimary; leftPadding: publicBtn.indicator.width + 6; verticalAlignment: Text.AlignVCenter } }
-                            RadioButton { id: privateBtn; ButtonGroup.group: visGroup
-                                contentItem: Text { text: "Private"; color: root.textPrimary; leftPadding: privateBtn.indicator.width + 6; verticalAlignment: Text.AlignVCenter } }
+                            DarkRadio { id: publicBtn;  text: "Public";  checked: true; ButtonGroup.group: visGroup }
+                            DarkRadio { id: privateBtn; text: "Private"; ButtonGroup.group: visGroup }
                         }
                         Label { text: "Description (optional)"; color: root.textSecondary; font.pixelSize: 12 }
                         DarkField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
