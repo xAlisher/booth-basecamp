@@ -12,6 +12,8 @@
 #include <QThread>
 #include <QEventLoop>
 #include <QTimer>
+#include <QUrl>
+#include <QStringList>
 #include <cstdio>
 
 static int fails = 0;
@@ -34,8 +36,9 @@ int main(int argc, char** argv) {
        "announce gated 'not_live' before streaming");
 
     // --- #3: startStream mints a full ingest card ---
+    // privacy:public pins direct mode (default is now onion, which would spawn tor — covered separately).
     const QJsonObject card = QJsonDocument::fromJson(
-        p.startStream("{\"name\":\"Test\",\"visibility\":\"public\"}").toUtf8()).object();
+        p.startStream("{\"name\":\"Test\",\"visibility\":\"public\",\"privacy\":\"public\"}").toUtf8()).object();
     printf("CARD: %s\n", QJsonDocument(card).toJson(QJsonDocument::Compact).constData());
     bool fields = true;
     for (const char* k : {"ok","path","streamKey","whipUrl","rtmpUrl","srtUrl","hlsUrl"})
@@ -43,6 +46,9 @@ int main(int argc, char** argv) {
     ok(fields, "card has all ingest fields");
     const QString path1 = card.value("path").toString();
     ok(!path1.isEmpty(), "path minted");
+    // #11: getStreamCard rebuilds the same card (the UI uses it to rehydrate after a restart).
+    ok(QJsonDocument::fromJson(p.getStreamCard().toUtf8()).object().value("path").toString() == path1,
+       "getStreamCard returns the active card (#11)");
 
     // --- #2 spawn: MediaMTX actually comes up under module control ---
     QThread::msleep(2500);
@@ -110,10 +116,15 @@ int main(int argc, char** argv) {
     QThread::msleep(800);
     ok(!mtxApiUp(apiPort), "MediaMTX down after stopStream");
 
-    // --- uniqueness: a second stream mints a different path ---
-    const QString path2 = QJsonDocument::fromJson(
-        p.startStream("{\"name\":\"Test2\",\"visibility\":\"public\"}").toUtf8()).object().value("path").toString();
-    ok(!path2.isEmpty() && path2 != path1, "second stream path is unique");
+    // --- #17 persistence: stop+start REUSES the same identity (stable key/path; OBS stays valid) ---
+    const QJsonObject card2 = QJsonDocument::fromJson(
+        p.startStream("{\"name\":\"Test2\",\"visibility\":\"public\",\"privacy\":\"public\"}").toUtf8()).object();
+    ok(card2.value("path").toString() == path1, "path reused across stop+start (#17)");
+    ok(card2.value("streamKey").toString() == card.value("streamKey").toString(),
+       "stream key persists across stop+start (#17)");
+    // regenerateKey rotates it on demand
+    const QString rotated = QJsonDocument::fromJson(p.regenerateKey().toUtf8()).object().value("streamKey").toString();
+    ok(!rotated.isEmpty() && rotated != card2.value("streamKey").toString(), "regenerateKey rotates the key (#17)");
     p.stopStream();
 
     // --- #5 discovery: ingestAnnounce decodes base64, stores, self-echo + malformed filtered ---
@@ -143,6 +154,18 @@ int main(int argc, char** argv) {
         qunsetenv("RADIO_TTL_MS");
     }
 
+    // --- #14 offline announce drops the station immediately (no waiting for TTL) ---
+    {
+        auto has = [&](const QString& pth){
+            const QJsonArray sa = QJsonDocument::fromJson(p.getStations().toUtf8()).object().value("stations").toArray();
+            for (const auto v : sa) if (v.toObject().value("path").toString() == pth) return true;
+            return false; };
+        p.ingestAnnounce(b64("{\"v\":1,\"name\":\"Bye FM\",\"path\":\"byep\",\"host\":\"z\",\"streamUrl\":\"http://h/byep/index.m3u8\"}"));
+        const bool before = has("byep");
+        p.ingestAnnounce(b64("{\"v\":1,\"type\":\"offline\",\"path\":\"byep\"}"));
+        ok(before && !has("byep"), "offline announce removes the station immediately (#14)");
+    }
+
     // --- #18 security: player allowlist + topic validation (inputs are attacker-controlled) ---
     ok(QJsonDocument::fromJson(p.play("/etc/passwd", "x").toUtf8()).object().value("error").toString() == "unsafe_url",
        "play rejects a non-http path");
@@ -150,6 +173,41 @@ int main(int argc, char** argv) {
        "play rejects file:// url");
     ok(QJsonDocument::fromJson(p.addTopic("not a topic!").toUtf8()).object().value("error").toString() == "invalid_topic",
        "addTopic rejects a malformed topic");
+
+    // --- Tor onion mode (T4/T5): onion announce carries a .onion (no IP); .onion playback uses torsocks ---
+    {
+        RadioModulePlugin op;
+        op.configureOnionForTest("examplexyz234abcdefghijklmnopqrstuvwx2onionhost.onion");
+        const QJsonObject pl = QJsonDocument::fromJson(op.buildAnnouncePayload(0).toUtf8()).object();
+        const QString surl = pl.value("streamUrl").toString();
+        ok(QUrl(surl).host().endsWith(".onion"), "onion announce streamUrl host is a .onion (no IP leaked)");
+
+        const QStringList oc = op.playerCommandForTest("http://abc23host.onion/p/index.m3u8");
+        ok(oc.size() >= 2 && oc.at(0).contains("torsocks") && oc.contains("http://abc23host.onion/p/index.m3u8"),
+           "play routes a .onion URL through torsocks");
+        ok(oc.contains("-infbuf") && oc.contains("-live_start_index"),
+           "player applies the listener jitter buffer (#17)");
+        const QStringList dc = op.playerCommandForTest("http://1.2.3.4:8888/p/index.m3u8");
+        ok(!dc.at(0).contains("torsocks") && dc.at(0).contains("ffplay"),
+           "play uses bare ffplay for a non-onion URL");
+        // Senty FINDING-1: mixed-case + trailing-dot .onion must NOT dodge Tor routing.
+        const QStringList tc = op.playerCommandForTest("http://AbcXyZ234host.OnIoN./p/index.m3u8");
+        ok(tc.at(0).contains("torsocks"),
+           "play routes a non-canonical .onion (case/trailing-dot) via torsocks");
+
+        // Senty ISSUE-1: the UI badge flag is backend-computed + canonical (matches routing), not a
+        // spoofable substring. A mixed-case/trailing-dot onion is flagged; a clearnet host is not.
+        RadioModulePlugin sp;
+        auto b = [](const QString& s){ return QString::fromUtf8(s.toUtf8().toBase64()); };
+        sp.ingestAnnounce(b("{\"v\":1,\"name\":\"OnionFM\",\"path\":\"onp\",\"host\":\"x\",\"streamUrl\":\"http://AbC234host.OnIoN./onp/index.m3u8\"}"));
+        sp.ingestAnnounce(b("{\"v\":1,\"name\":\"ClearFM\",\"path\":\"clp\",\"host\":\"y\",\"streamUrl\":\"http://1.2.3.4:8888/clp/index.m3u8\"}"));
+        const QJsonArray sa = QJsonDocument::fromJson(sp.getStations().toUtf8()).object().value("stations").toArray();
+        bool onionFlag = false, clearFlag = true;
+        for (const auto v : sa) { const QJsonObject o = v.toObject();
+            if (o.value("path").toString() == "onp") onionFlag = o.value("_onion").toBool();
+            if (o.value("path").toString() == "clp") clearFlag = o.value("_onion").toBool(); }
+        ok(onionFlag && !clearFlag, "ingest sets a canonical _onion flag (badge consistent with routing)");
+    }
 
     printf("=== %s ===\n", fails ? "FAILURES" : "ALL PASS");
     return fails ? 1 : 0;

@@ -46,6 +46,18 @@ discovers the station over LogosMessaging (Waku) and plays it:
 
 Dead stations drop off the list automatically (45 s TTL = 3 missed heartbeats).
 
+### Public vs. private stations — what "Add a private topic" means
+
+Discovery happens over **LogosMessaging topics**. A **Public** station announces on the well-known
+**directory topic** (`/radio-basecamp/1/directory/json`) that everyone's Listen tab auto-subscribes
+to — so it shows up for everyone. A **Private** station instead announces on an **unguessable
+per-stream topic** (`/radio-basecamp/1/<random>/json`) and is **not** on the public directory — so it
+never appears in anyone's Listen list by default.
+
+**"+ Add a private topic"** lets a listener paste that private topic string — which the host shares
+**out-of-band** (e.g., a DM) — to subscribe to it; the private station then appears in *their* Listen
+list. It's how you tune into an **unlisted / invite-only broadcast**.
+
 ## How it works
 
 ```

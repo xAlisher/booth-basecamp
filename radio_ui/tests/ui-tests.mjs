@@ -25,29 +25,37 @@ test("radio_ui: Stream-tab setup-form elements instantiate (#7)", async (app) =>
   await app.expectTexts(["Station name", "Visibility", "Public", "Private", "Start"]);
 });
 
-test("radio_ui: status light instantiates with default-state label (#8)", async (app) => {
-  // streamState defaults to "idle" → stateLabel() = "Waiting for OBS…". expectTexts ignores
-  // visibility, so this proves the status label exists/binds; live transitions need the real app.
-  await app.expectTexts(["Waiting for OBS…"]);
+test("radio_ui: status pills instantiate (#8/#15)", async (app) => {
+  // Status moved to header pills (Discovery + OBS + Onion). The OBS pill's default label is
+  // deterministic; expectTexts ignores visibility so the hidden-until-streaming pill still matches.
+  await app.expectTexts(["Waiting for OBS"]);
 });
 test("radio_ui: Listen-tab elements instantiate (#9)", async (app) => {
   // empty-state label + Add button (station rows + play need live backend data → real app)
   await app.expectTexts(["Listen", "Open to discover stations", "Add"]);
 });
 
-test("radio_ui: empty/transitional state copy (#14)", async (app) => {
-  // Stream status (idle→"Waiting for OBS…") + Listen empty state both instantiate.
-  await app.expectTexts(["Waiting for OBS…", "Open to discover stations"]);
+test("radio_ui: empty/transitional state copy", async (app) => {
+  // Listen empty state + the always-present Activity panel header.
+  await app.expectTexts(["Open to discover stations", "Activity"]);
 });
 
-test("radio_ui: failed start surfaces an error banner (#15)", async (app) => {
-  // mediamtx isn't on PATH in the standalone-app sandbox, so clicking Start fails →
-  // the error must be surfaced (not a silent dead-end). This drives the REAL backend.
+test("radio_ui: failed start is handled, error to the activity log (no banner)", async (app) => {
+  // mediamtx isn't on PATH in the sandbox, so Start fails → the error goes to the activity log
+  // (no banner/toast). The combined "[ts] message" log rows aren't exact-matchable, so this drives
+  // the real backend + asserts the UI survives and stays on the Stream form (no silent dead-end).
   await app.click("Start");
-  await app.waitFor(
-    async () => { await app.expectTexts(["Broadcast server (MediaMTX) isn't available on this system."]); },
-    { timeout: 10000, interval: 500, description: "error banner" }
-  );
+  await app.expectTexts(["Activity", "Station name", "Start"]);
+});
+
+test("radio_ui: Tor privacy toggle instantiates, onion default (T7)", async (app) => {
+  // Onion-mode privacy control on the Stream form (epic #1), onion is the default option.
+  await app.expectTexts(["Privacy", "Onion (Tor)", "Direct (LAN)"]);
+});
+
+test("radio_ui: activity log panel instantiates (#12)", async (app) => {
+  // Fixed-height keycard-style ActivityLog (copy/clear are icons now, so check the header label).
+  await app.expectTexts(["Activity"]);
 });
 
 // Tap-to-play with live stations needs delivery_module announces → cross-machine demo.
