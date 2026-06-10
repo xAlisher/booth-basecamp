@@ -26,6 +26,9 @@ Item {
     // ── State ────────────────────────────────────────────────────────────────
     property var    streamCard:   null
     property string streamState:  "idle"
+    property string streamPrivacy: "public"   // public | onion (this host's broadcast)
+    property string onionAddr:    ""          // our .onion once published (onion mode)
+    property bool   onionReady:   false        // hidden-service descriptor published → reachable
     property var    stations:     []
     property string playingName:  ""
     property bool   discoveryStarted: false
@@ -68,15 +71,22 @@ Item {
     }
 
     function startStream() {
+        var onion = privacyGroup.checkedButton === onionBtn
         var cfg = JSON.stringify({
             name: nameField.text,
             visibility: visGroup.checkedButton === privateBtn ? "private" : "public",
+            privacy: onion ? "onion" : "public",
             description: descField.text
         })
+        root.streamPrivacy = onion ? "onion" : "public"
+        root.onionAddr = ""; root.onionReady = false
         var r = call("startStream", [cfg])
         if (r && r.ok) { root.streamState = "waiting"; root.streamCard = r }
     }
-    function stopStream() { call("stopStream", []); root.streamCard = null; root.streamState = "idle" }
+    function stopStream() {
+        call("stopStream", []); root.streamCard = null; root.streamState = "idle"
+        root.streamPrivacy = "public"; root.onionAddr = ""; root.onionReady = false
+    }
     function playStation(s) {
         var r = root.call("play", [s.streamUrl, s.name || ""])
         if (r && r.ok) root.playingName = s.name || s.path
@@ -87,6 +97,10 @@ Item {
         return sec < 60 ? sec + "s" : sec < 3600 ? Math.floor(sec/60) + "m" : Math.floor(sec/3600) + "h"
     }
     function stateLabel() {
+        // In onion mode the announce is held until the Tor descriptor publishes (~30–60s).
+        if (root.streamPrivacy === "onion" && !root.onionReady
+            && (root.streamState === "live" || root.streamState === "receiving"))
+            return "Publishing over Tor…"
         return root.streamState === "live" ? "Live (announcing)"
              : root.streamState === "receiving" ? "Receiving stream…" : "Waiting for OBS…"
     }
@@ -114,7 +128,11 @@ Item {
     }
     Timer {  // origin status while streaming (#8)
         interval: 1500; repeat: true; running: root.streamCard !== null
-        onTriggered: { var r = root.callParse("getStreamStatus", []); if (r && r.state) root.streamState = r.state }
+        onTriggered: { var r = root.callParse("getStreamStatus", [])
+            if (r && r.state) { root.streamState = r.state
+                if (r.privacy) root.streamPrivacy = r.privacy
+                if (r.onion !== undefined) root.onionAddr = r.onion
+                if (r.onionReady !== undefined) root.onionReady = r.onionReady } }
     }
     Timer {  // live directory while on the Listen tab (#9)
         interval: 2000; repeat: true; running: tabs.currentIndex === 1
@@ -277,6 +295,18 @@ Item {
                             DarkRadio { id: publicBtn;  text: "Public";  checked: true; ButtonGroup.group: visGroup }
                             DarkRadio { id: privateBtn; text: "Private"; ButtonGroup.group: visGroup }
                         }
+                        Label { text: "Privacy"; color: root.textSecondary; font.pixelSize: 12 }
+                        RowLayout {
+                            spacing: 16
+                            ButtonGroup { id: privacyGroup }
+                            DarkRadio { id: directBtn; text: "Direct (IP)";  checked: true; ButtonGroup.group: privacyGroup }
+                            DarkRadio { id: onionBtn;  text: "Onion (Tor)";  ButtonGroup.group: privacyGroup }
+                        }
+                        Label {
+                            visible: privacyGroup.checkedButton === onionBtn
+                            Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: 11; color: root.textMuted
+                            text: "🧅 Listeners reach you over Tor — your IP stays hidden. First connect is slower (Tor descriptor publish)."
+                        }
                         Label { text: "Description (optional)"; color: root.textSecondary; font.pixelSize: 12 }
                         DarkField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
                         AccentButton { text: "Start"; enabled: nameField.text.length > 0; onClicked: root.startStream() }
@@ -295,6 +325,24 @@ Item {
                         Label {
                             Layout.fillWidth: true; wrapMode: Text.WordWrap; color: root.textSecondary; font.pixelSize: 12
                             text: "In OBS → Settings → Stream, paste the WHIP URL (Service: WHIP), or use RTMP with the Server + Stream Key below. The key is secret — don't share it."
+                        }
+                        // Onion mode: the publish state + the .onion address listeners discover
+                        RowLayout {
+                            visible: root.streamPrivacy === "onion"
+                            Layout.fillWidth: true; spacing: 8
+                            Label { text: "🧅"; font.pixelSize: 13 }
+                            Label {
+                                Layout.fillWidth: true; elide: Text.ElideMiddle; font.pixelSize: 12
+                                color: root.onionReady ? root.successGreen : root.warningYellow
+                                text: root.onionReady ? ("Onion ready · " + root.onionAddr)
+                                     : (root.onionAddr.length > 0 ? "Publishing Tor descriptor…" : "Starting Tor…")
+                            }
+                            DarkButton {
+                                visible: root.onionReady && root.onionAddr.length > 0
+                                text: "Copy .onion"
+                                onClicked: root.copyText("http://" + root.onionAddr + "/"
+                                    + (root.streamCard ? root.streamCard.path : "") + "/index.m3u8")
+                            }
                         }
                         component CopyRow: RowLayout {
                             property string label: ""
@@ -330,7 +378,14 @@ Item {
                             background: Rectangle { color: parent.hovered ? root.bgSecondary : "transparent"; radius: 6 }
                             contentItem: ColumnLayout {
                                 spacing: 2
-                                Label { text: modelData.name || "Unknown"; color: root.textPrimary; font.bold: true }
+                                RowLayout {
+                                    spacing: 6
+                                    Label { text: modelData.name || "Unknown"; color: root.textPrimary; font.bold: true }
+                                    Label {  // over-Tor badge — host IP hidden
+                                        visible: (modelData.streamUrl || "").indexOf(".onion/") !== -1
+                                        text: "🧅 Tor"; color: root.warningYellow; font.pixelSize: 10; font.bold: true
+                                    }
+                                }
                                 Label { text: (modelData.host || "") + " · " + root.uptime(modelData.startedAt)
                                         color: root.textSecondary; font.pixelSize: 12 }
                             }

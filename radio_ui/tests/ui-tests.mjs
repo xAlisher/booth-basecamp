@@ -50,6 +50,11 @@ test("radio_ui: failed start surfaces an error banner (#15)", async (app) => {
   );
 });
 
+test("radio_ui: Tor privacy toggle instantiates (T7)", async (app) => {
+  // Onion-mode privacy control on the Stream form (epic #1). expectTexts matches by text property.
+  await app.expectTexts(["Privacy", "Direct (IP)", "Onion (Tor)"]);
+});
+
 // Tap-to-play with live stations needs delivery_module announces → cross-machine demo.
 // Note: the Start->OBS-card click-through spawns MediaMTX + needs a non-gated backend, so it is
 // verified in the running app / cross-machine demo, not this hermetic test.

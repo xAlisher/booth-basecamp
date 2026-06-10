@@ -291,9 +291,19 @@ QString RadioModulePlugin::getStreamStatus()
 {
     const QString state = streamState();
     QJsonObject r{{"ok", true}, {"state", state}};
-    if (m_mediamtx)
-        r["hlsUrl"] = QStringLiteral("http://%1:%2/%3/index.m3u8")
-                          .arg(lanIp()).arg(port("RADIO_HLS_PORT", 8888)).arg(m_path);
+    if (m_mediamtx) {
+        r["privacy"] = m_privacy;
+        if (m_privacy == "onion") {
+            // Never surface lanIp() in onion mode — advertise the .onion (once known) or nothing.
+            r["onion"] = m_onion;              // "" until the hostname appears
+            r["onionReady"] = m_onionReady;    // false until the descriptor is published
+            if (!m_onion.isEmpty())
+                r["hlsUrl"] = QStringLiteral("http://%1/%2/index.m3u8").arg(m_onion, m_path);
+        } else {
+            r["hlsUrl"] = QStringLiteral("http://%1:%2/%3/index.m3u8")
+                              .arg(lanIp()).arg(port("RADIO_HLS_PORT", 8888)).arg(m_path);
+        }
+    }
     if (state != m_lastStreamState) {
         m_lastStreamState = state;
         emit eventResponse("streamStatusChanged", QVariantList() << state);
