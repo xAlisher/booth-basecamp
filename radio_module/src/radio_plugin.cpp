@@ -52,6 +52,8 @@ RadioModulePlugin::RadioModulePlugin(QObject* parent) : QObject(parent)
     connect(&m_heartbeat, &QTimer::timeout, this, [this]{ announceOnce(); });
     // Status pill: poll delivery_module reachability.
     connect(&m_deliveryHealth, &QTimer::timeout, this, [this]{ checkDeliveryHealth(); });
+    // Onion mode: poll for the hidden-service hostname + descriptor publish.
+    connect(&m_onionPublishPoll, &QTimer::timeout, this, [this]{ pollOnionStatus(); });
 }
 
 RadioModulePlugin::~RadioModulePlugin()
@@ -59,6 +61,7 @@ RadioModulePlugin::~RadioModulePlugin()
     qDebug() << "RadioModulePlugin: destroyed";
     killMediaMtx();  // never leak the origin process
     killPlayer();
+    killTor();
 }
 
 void RadioModulePlugin::initLogos(LogosAPI* api)
@@ -181,6 +184,8 @@ QString RadioModulePlugin::startStream(const QString& configJson)
     if (m_streamName.isEmpty()) return err("name_required");
     m_visibility  = cfg.value("visibility").toString(QStringLiteral("public"));
     m_description = cfg.value("description").toString();
+    // Privacy mode (epic: hide streamer IP). "onion" → announce a .onion URL instead of lanIp().
+    m_privacy     = cfg.value("privacy").toString(QStringLiteral("public"));
 
     m_path       = randomHex(8);   // 64-bit public stream id
     m_streamKey  = randomHex(16);  // 128-bit secret publish credential (#18)
@@ -198,6 +203,13 @@ QString RadioModulePlugin::startStream(const QString& configJson)
     if (configPath.isEmpty()) return err("config_write_failed");
     const QString spawnErr = spawnMediaMtx(configPath);
     if (!spawnErr.isEmpty()) return err(spawnErr);
+
+    // Onion mode: bring up a tor hidden service for the HLS port. The .onion + readiness arrive
+    // asynchronously (descriptor publish ~30-60s); announceOnce gates on it so no IP is ever sent.
+    if (m_privacy == "onion") {
+        m_onion.clear(); m_onionReady = false;
+        if (!ensureTor(true)) { killMediaMtx(); return err("tor_failed"); }
+    }
 
     const QString ip = lanIp();
     const int hls = port("RADIO_HLS_PORT", 8888), whip = port("RADIO_WHIP_PORT", 8889),
@@ -224,11 +236,14 @@ QString RadioModulePlugin::stopStream()
     if (!m_mediamtx) return err("not_streaming");
     m_heartbeat.stop();
     killMediaMtx();
+    // Tear down the hidden service (a listener-side tor for playback, if any, is separate).
+    if (m_privacy == "onion") killTor();
     if (!m_runtimeDir.isEmpty()) QDir(m_runtimeDir).removeRecursively();
     qDebug() << "RadioModulePlugin: stream stopped";
     emit eventResponse("streamStopped", QVariantList() << m_path);
     m_path.clear(); m_streamKey.clear(); m_streamName.clear(); m_lastStreamState.clear();
     m_announceTopic.clear(); m_startedAt = 0; m_announceSeq = 0;
+    m_privacy = QStringLiteral("public"); m_onion.clear(); m_onionReady = false;
     return ok();
 }
 
@@ -419,8 +434,10 @@ QString RadioModulePlugin::getStations()
 
 QString RadioModulePlugin::buildAnnouncePayload(int seq) const
 {
-    const QString hls = QStringLiteral("http://%1:%2/%3/index.m3u8")
-                            .arg(lanIp()).arg(port("RADIO_HLS_PORT", 8888)).arg(m_path);
+    // Onion mode advertises the .onion (no IP, hidden service maps :80); else the direct LAN URL.
+    const QString hls = (m_privacy == "onion" && !m_onion.isEmpty())
+        ? QStringLiteral("http://%1/%2/index.m3u8").arg(m_onion, m_path)
+        : QStringLiteral("http://%1:%2/%3/index.m3u8").arg(lanIp()).arg(port("RADIO_HLS_PORT", 8888)).arg(m_path);
     const QJsonObject a{
         {"v", 1}, {"name", m_streamName}, {"host", m_hostLabel}, {"path", m_path},
         {"streamUrl", hls}, {"visibility", m_visibility}, {"description", m_description},
@@ -443,6 +460,10 @@ QString RadioModulePlugin::announceOnce()
     const QString state = streamState();
     if (state != "live" && state != "receiving")
         return result(false, "not_live", QString(), 0);
+    // Onion mode: never announce until the hidden-service descriptor is published — otherwise we'd
+    // either send a dead URL or (if onion is empty) fall back to the LAN IP, defeating the point.
+    if (m_privacy == "onion" && !m_onionReady)
+        return result(false, "onion_not_ready", QString(), 0);
 
     const QString payload = buildAnnouncePayload(m_announceSeq);
     if (!ensureDeliveryNode())
@@ -470,18 +491,135 @@ void RadioModulePlugin::killPlayer()
 QString RadioModulePlugin::startFfplay()
 {
     killPlayer();
-    const QString bin = qEnvironmentVariable("RADIO_FFPLAY_BIN", QStringLiteral("ffplay"));
+    // A .onion stream needs a local tor SOCKS proxy (no hidden service for listening).
+    if (QUrl(m_playingUrl).host().endsWith(QLatin1String(".onion")) && !ensureTor(false))
+        return QStringLiteral("tor_failed");
+    const QPair<QString, QStringList> cmd = buildPlayerCommand(m_playingUrl);
     m_player = new QProcess(this);
     dieWithParent(m_player);
-    m_player->start(bin, QStringList() << "-nodisp" << "-autoexit" << "-loglevel" << "error"
-                                       << "-volume" << QString::number(m_volume) << m_playingUrl);
+    m_player->start(cmd.first, cmd.second);
     if (!m_player->waitForStarted(5000)) {
         const bool notFound = m_player->error() == QProcess::FailedToStart;
-        qWarning() << "RadioModulePlugin: ffplay failed:" << m_player->errorString();
+        qWarning() << "RadioModulePlugin: player failed:" << m_player->errorString();
         killPlayer();
         return notFound ? QStringLiteral("ffplay_not_found") : QStringLiteral("ffplay_failed");
     }
     return QString();
+}
+
+// ---------------------------------------------------------------------------
+// Tor onion mode — hide the streamer's IP (epic: docs/plans/tor-onion.md).
+// One tor process serves SocksPort (listening over Tor) and, in onion host mode,
+// a HiddenService mapping :80 → the local MediaMTX HLS port.
+// ---------------------------------------------------------------------------
+
+QPair<QString, QStringList> RadioModulePlugin::buildPlayerCommand(const QString& url) const
+{
+    const QString ffplay = qEnvironmentVariable("RADIO_FFPLAY_BIN", QStringLiteral("ffplay"));
+    QStringList ffargs;
+    ffargs << "-nodisp" << "-autoexit" << "-loglevel" << "error"
+           << "-volume" << QString::number(m_volume) << url;
+    // ffmpeg has no native SOCKS; route .onion playback through torsocks (LD_PRELOAD → tor SOCKS).
+    if (QUrl(url).host().endsWith(QLatin1String(".onion"))) {
+        const QString torsocks = qEnvironmentVariable("RADIO_TORSOCKS_BIN", QStringLiteral("torsocks"));
+        return { torsocks, QStringList() << ffplay << ffargs };
+    }
+    return { ffplay, ffargs };
+}
+
+bool RadioModulePlugin::ensureTor(bool withHiddenService)
+{
+    if (m_tor && m_tor->state() == QProcess::Running) {
+        if (!withHiddenService || !m_onion.isEmpty()) return true;
+        killTor();  // running without a HS but we now need one → restart with it
+    }
+    const QString bin = qEnvironmentVariable("RADIO_TOR_BIN", QStringLiteral("tor"));
+    m_torDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+               + "/radio_module/tor-" + (m_path.isEmpty() ? randomHex(4) : m_path);
+    const QString dataDir = m_torDir + "/data", hsDir = m_torDir + "/hs",
+                  logFile = m_torDir + "/tor.log", torrc = m_torDir + "/torrc";
+    if (!QDir().mkpath(dataDir)) return false;
+
+    QString cfg;
+    QTextStream s(&cfg);
+    s << "SocksPort " << torSocksPort() << "\n"
+      << "DataDirectory " << dataDir << "\n"
+      << "Log notice file " << logFile << "\n";
+    if (withHiddenService) {
+        QDir().mkpath(hsDir);
+        QFile::setPermissions(hsDir, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+        s << "HiddenServiceDir " << hsDir << "\n"
+          << "HiddenServicePort 80 127.0.0.1:" << port("RADIO_HLS_PORT", 8888) << "\n";
+    }
+    QFile f(torrc);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+    f.write(cfg.toUtf8()); f.close();
+
+    m_tor = new QProcess(this);
+    m_tor->setProcessChannelMode(QProcess::MergedChannels);
+    dieWithParent(m_tor);   // don't orphan tor on kill -9
+    m_tor->start(bin, QStringList() << "-f" << torrc);
+    if (!m_tor->waitForStarted(5000)) {
+        qWarning() << "RadioModulePlugin: tor failed to start:" << m_tor->errorString();
+        killTor();
+        return false;
+    }
+    if (withHiddenService) {
+        // hostname + descriptor publish are async — pollOnionStatus() reads them off disk/log.
+        m_onion.clear(); m_onionReady = false;
+        m_onionPublishPoll.start(2000);
+    }
+    return true;
+}
+
+void RadioModulePlugin::pollOnionStatus()
+{
+    if (m_torDir.isEmpty()) return;
+    if (m_onion.isEmpty()) {
+        QFile hf(m_torDir + "/hs/hostname");
+        if (hf.open(QIODevice::ReadOnly)) { m_onion = QString::fromUtf8(hf.readAll()).trimmed(); hf.close(); }
+    }
+    if (!m_onion.isEmpty() && !m_onionReady) {
+        QFile lf(m_torDir + "/tor.log");
+        if (lf.open(QIODevice::ReadOnly)) {
+            const QString log = QString::fromUtf8(lf.readAll()); lf.close();
+            // tor logs e.g. "Uploaded rendezvous descriptor" / "Successfully uploaded …" on publish.
+            if (log.contains(QLatin1String("uploaded"), Qt::CaseInsensitive)
+                && log.contains(QLatin1String("descriptor"), Qt::CaseInsensitive)) {
+                m_onionReady = true;
+                m_onionPublishPoll.stop();
+                qDebug() << "RadioModulePlugin: onion descriptor published — reachable";
+                emit eventResponse("onionReady", QVariantList() << m_path);  // host id, not the .onion
+            }
+        }
+    }
+}
+
+void RadioModulePlugin::killTor()
+{
+    m_onionPublishPoll.stop();
+    if (m_tor) {
+        m_tor->terminate();
+        if (!m_tor->waitForFinished(3000)) m_tor->kill();
+        m_tor->deleteLater();
+        m_tor = nullptr;
+    }
+    if (!m_torDir.isEmpty()) { QDir(m_torDir).removeRecursively(); m_torDir.clear(); }
+    m_onion.clear(); m_onionReady = false;
+}
+
+// --- Test seams (not IPC API) ---
+void RadioModulePlugin::configureOnionForTest(const QString& onion)
+{
+    m_privacy = QStringLiteral("onion");
+    m_onion = onion;
+    m_onionReady = !onion.isEmpty();
+}
+
+QStringList RadioModulePlugin::playerCommandForTest(const QString& url) const
+{
+    const QPair<QString, QStringList> c = buildPlayerCommand(url);
+    return QStringList() << c.first << c.second;
 }
 
 QString RadioModulePlugin::play(const QString& hlsUrl, const QString& stationName)

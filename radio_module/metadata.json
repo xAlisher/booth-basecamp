@@ -10,7 +10,7 @@
   "nix": {
     "packages": {
       "build": [],
-      "runtime": ["ffmpeg", "mediamtx"]
+      "runtime": ["ffmpeg", "mediamtx", "tor", "torsocks"]
     },
     "external_libraries": [],
     "cmake": {

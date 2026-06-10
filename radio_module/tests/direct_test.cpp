@@ -12,6 +12,8 @@
 #include <QThread>
 #include <QEventLoop>
 #include <QTimer>
+#include <QUrl>
+#include <QStringList>
 #include <cstdio>
 
 static int fails = 0;
@@ -150,6 +152,22 @@ int main(int argc, char** argv) {
        "play rejects file:// url");
     ok(QJsonDocument::fromJson(p.addTopic("not a topic!").toUtf8()).object().value("error").toString() == "invalid_topic",
        "addTopic rejects a malformed topic");
+
+    // --- Tor onion mode (T4/T5): onion announce carries a .onion (no IP); .onion playback uses torsocks ---
+    {
+        RadioModulePlugin op;
+        op.configureOnionForTest("examplexyz234abcdefghijklmnopqrstuvwx2onionhost.onion");
+        const QJsonObject pl = QJsonDocument::fromJson(op.buildAnnouncePayload(0).toUtf8()).object();
+        const QString surl = pl.value("streamUrl").toString();
+        ok(QUrl(surl).host().endsWith(".onion"), "onion announce streamUrl host is a .onion (no IP leaked)");
+
+        const QStringList oc = op.playerCommandForTest("http://abc23host.onion/p/index.m3u8");
+        ok(oc.size() >= 2 && oc.at(0).contains("torsocks") && oc.contains("http://abc23host.onion/p/index.m3u8"),
+           "play routes a .onion URL through torsocks");
+        const QStringList dc = op.playerCommandForTest("http://1.2.3.4:8888/p/index.m3u8");
+        ok(!dc.at(0).contains("torsocks") && dc.at(0).contains("ffplay"),
+           "play uses bare ffplay for a non-onion URL");
+    }
 
     printf("=== %s ===\n", fails ? "FAILURES" : "ALL PASS");
     return fails ? 1 : 0;

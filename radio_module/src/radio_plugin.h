@@ -3,9 +3,11 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVariantList>
 #include <QSet>
 #include <QMap>
+#include <QPair>
 #include <QJsonObject>
 #include <QTimer>
 #include "radio_interface.h"
@@ -62,6 +64,11 @@ public:
     QString announceOnce();
     int     announceAttemptCount() const { return m_announceAttempts; }  // #10 test seam
 
+    // Tor onion mode test seams (epic: hide streamer IP). Configure onion state without spawning
+    // tor, and inspect ffplay command routing. Not IPC API.
+    void        configureOnionForTest(const QString& onion);          // privacy=onion + m_onion
+    QStringList playerCommandForTest(const QString& url) const;       // [program, args…]; torsocks for .onion
+
 signals:
     void eventResponse(const QString& eventName, const QVariantList& args);
 
@@ -84,6 +91,13 @@ private:
     void     checkDeliveryHealth();        // poll delivery_module node reachability for the status pill
     void     killPlayer();                 // stop + reap the ffplay process (#9)
     QString  startFfplay();                // (re)launch ffplay on m_playingUrl; "" ok else error code
+    // --- Tor onion mode (epic: hide the streamer's IP) ---
+    bool     ensureTor(bool withHiddenService);  // spawn/lifecycle tor (SocksPort [+ HiddenService])
+    void     killTor();
+    void     pollOnionStatus();                  // read .onion hostname + detect descriptor publish
+    // ffplay invocation, routed through torsocks for .onion hosts. Returns {program, args}.
+    QPair<QString, QStringList> buildPlayerCommand(const QString& url) const;
+    int      torSocksPort() const { return port("RADIO_TOR_SOCKS_PORT", 9050); }
 
     // NB: do NOT declare a LogosAPI* member — initLogos must set the base PluginInterface::logosAPI,
     // which ModuleProxy reads for cross-module IPC (skills: logosapi-member-no-redeclare, initlogos-no-override).
@@ -116,6 +130,14 @@ private:
     QProcess* m_player = nullptr;
     QString   m_playingStation, m_playingUrl;
     int       m_volume = 75;      // #13 0–100; applied via ffplay -volume
+
+    // Tor onion mode — one tor serves SocksPort (listening) + HiddenService (hosting in onion mode)
+    QProcess* m_tor = nullptr;
+    QString   m_privacy = QStringLiteral("public");  // "public" | "onion"
+    QString   m_onion;            // .onion host once the hidden-service hostname is known
+    QString   m_torDir;           // per-run tor DataDirectory + HiddenServiceDir root (temp)
+    bool      m_onionReady = false;  // descriptor published → reachable by listeners
+    QTimer    m_onionPublishPoll;    // polls tor.log for the descriptor upload
 };
 
 #endif // RADIO_MODULE_PLUGIN_H

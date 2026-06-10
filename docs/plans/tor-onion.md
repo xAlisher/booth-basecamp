@@ -32,16 +32,20 @@ Host (onion mode)                         Tor network                 Listener
 
 | # | Epic | Title | Priority | Status |
 |---|------|-------|----------|--------|
-| T1 | Spike | Validate: tor HiddenService + `torsocks` fetch end-to-end | P0 | — |
-| T2 | Host | `ensureTor()` — spawn/lifecycle a tor daemon (SocksPort), `dieWithParent`, env override | P0 | — |
-| T3 | Host | Onion mode — HiddenService for MediaMTX, read `.onion`, wait-for-descriptor state | P0 | — |
-| T4 | Host | Announce the `.onion` URL in onion mode — **no IP** in payload, card, or logs | P0 | — |
-| T5 | Listen | Route `ffplay` via `torsocks` for `.onion` URLs (keep http/https allow-list) | P0 | — |
-| T6 | Build | `tor` + `torsocks` nix runtime deps + `RADIO_TOR_BIN` / `RADIO_TORSOCKS_BIN` overrides | P0 | — |
+| T1 | Spike | Validate: tor HiddenService + `torsocks` fetch end-to-end | P0 | ✅ done (fetched over Tor) |
+| T2 | Host | `ensureTor()` — spawn/lifecycle a tor daemon (SocksPort), `dieWithParent`, env override | P0 | ✅ impl |
+| T3 | Host | Onion mode — HiddenService for MediaMTX, read `.onion`, wait-for-descriptor state | P0 | ✅ impl (async poll) |
+| T4 | Host | Announce the `.onion` URL in onion mode — **no IP** in payload, card, or logs | P0 | ✅ impl + test |
+| T5 | Listen | Route `ffplay` via `torsocks` for `.onion` URLs (keep http/https allow-list) | P0 | ✅ impl + test |
+| T6 | Build | `tor` + `torsocks` nix runtime deps + `RADIO_TOR_BIN` / `RADIO_TORSOCKS_BIN` overrides | P0 | ✅ impl (builds) |
 | T7 | UI | Privacy toggle (Public/Onion), show `.onion`/"hidden", 🧅 listen badge, "Connecting over Tor…" | P1 | — |
-| T8 | Test | direct-test: onion announce carries `.onion` (no IP); play routes `.onion` via torsocks; tor lifecycle | P1 | — |
+| T8 | Test | direct-test: onion announce carries `.onion` (no IP); play routes `.onion` via torsocks; tor lifecycle | P1 | ✅ done (23/23) |
 | T9 | Harden | No IP leak in onion mode anywhere; torsocks-missing + descriptor-timeout UX; don't log the hostname at info | P2 | — |
 | T10 | Docs | BRIEF/README: onion mode shipped — usage + residual trade-offs (latency, both need tor) | P2 | — |
+
+> **Runtime-verification pending:** the spike proved the tor+onion+fetch chain and the direct-test proves
+> the module logic (announce URL, torsocks routing). The *full* in-AppImage flow (onion broadcast →
+> listener plays over Tor) still needs a live run — deferred so as not to disturb the running demo.
 
 **P0 vertical slice (T1–T6) = a working onion broadcast a separate listener plays with no IP exposed.**
 
