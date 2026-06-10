@@ -54,6 +54,16 @@ QString resolveBin(const QString& name, const char* envVar) {
             if (QFileInfo(c).isExecutable()) return c;
     return name;  // fall back to PATH
 }
+// Environment for spawned SYSTEM binaries (tor/mediamtx/ffplay). The Basecamp AppImage exports
+// LD_LIBRARY_PATH/LD_PRELOAD pointing at its bundled libs; a child like the apt `tor` then loads the
+// wrong libevent and dies ("undefined symbol: evutil_secure_rng_add_bytes"). Drop them so system
+// binaries resolve against the system ld cache; nix binaries use their own $ORIGIN/rpath regardless.
+QProcessEnvironment cleanSpawnEnv() {
+    QProcessEnvironment e = QProcessEnvironment::systemEnvironment();
+    e.remove(QStringLiteral("LD_LIBRARY_PATH"));
+    e.remove(QStringLiteral("LD_PRELOAD"));
+    return e;
+}
 }
 
 // Uniform JSON return shape so the QML bridge is stable. Implemented per-issue
@@ -181,6 +191,7 @@ QString RadioModulePlugin::spawnMediaMtx(const QString& configPath)
     const QString bin = resolveBin(QStringLiteral("mediamtx"), "RADIO_MEDIAMTX_BIN");
     m_mediamtx = new QProcess(this);
     m_mediamtx->setProcessChannelMode(QProcess::MergedChannels);
+    m_mediamtx->setProcessEnvironment(cleanSpawnEnv());  // system binary — not the AppImage's libs
     dieWithParent(m_mediamtx);   // #15/ops: don't orphan + leak ports on kill -9
     m_mediamtx->start(bin, QStringList() << configPath);
     if (!m_mediamtx->waitForStarted(5000)) {
@@ -644,16 +655,16 @@ QString RadioModulePlugin::startFfplay()
     const QPair<QString, QStringList> cmd = buildPlayerCommand(m_playingUrl);
     m_player = new QProcess(this);
     dieWithParent(m_player);
+    QProcessEnvironment env = cleanSpawnEnv();  // system ffplay/torsocks → system libs (AppImage trap)
     if (isOnionUrl(m_playingUrl)) {
         // Lock torsocks onto OUR tor SOCKS instance (Senty ISSUE-4) — without this, an overridden
         // RADIO_TOR_SOCKS_PORT leaves torsocks on its compiled-in 9050 default, so ffplay could hit
         // the wrong proxy or fail and fall back to a direct connection → listener IP leak.
-        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
         env.insert("TORSOCKS_TOR_ADDRESS", "127.0.0.1");
         env.insert("TORSOCKS_TOR_PORT", QString::number(m_listenSocksPort > 0 ? m_listenSocksPort : torSocksPort()));
         env.insert("TORSOCKS_ISOLATE_PID", "1");
-        m_player->setProcessEnvironment(env);
     }
+    m_player->setProcessEnvironment(env);
     m_player->start(cmd.first, cmd.second);
     if (!m_player->waitForStarted(5000)) {
         const bool notFound = m_player->error() == QProcess::FailedToStart;
@@ -703,6 +714,7 @@ bool RadioModulePlugin::startTorProc(QProcess*& proc, const QString& dir, const 
 
     proc = new QProcess(this);
     proc->setProcessChannelMode(QProcess::MergedChannels);
+    proc->setProcessEnvironment(cleanSpawnEnv());  // apt tor needs system libevent, not the AppImage's
     dieWithParent(proc);   // don't orphan tor on kill -9
     proc->start(bin, QStringList() << "-f" << torrc);
     if (!proc->waitForStarted(5000)) {
