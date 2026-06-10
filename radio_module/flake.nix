@@ -19,8 +19,9 @@
       configFile = ./metadata.json;
       flakeInputs = inputs;
       # NOTE: runtime binaries (mediamtx/tor/torsocks/ffplay) can't be bundled via postInstall — the
-      # portable bundler (nix-bundle-dir) closures only the .so + its lib deps and drops extra files.
-      # The plugin resolves them via resolveBin(): env override → <module-dir>[/bin] → PATH. So
-      # scripts/install.sh drops mediamtx into the module dir post-install for a self-contained setup.
+      # portable bundler (nix-bundle-dir) closures only the .so + its lib deps and drops extra files
+      # (upstream: logos-co/logos-module-builder#114). The plugin resolves them via resolveBin():
+      # env override → <module-dir>[/bin] → PATH. scripts/install.sh drops a static mediamtx into the
+      # module dir post-install for a self-contained dev install until #114 lands.
     };
 }
