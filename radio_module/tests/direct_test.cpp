@@ -167,6 +167,10 @@ int main(int argc, char** argv) {
         const QStringList dc = op.playerCommandForTest("http://1.2.3.4:8888/p/index.m3u8");
         ok(!dc.at(0).contains("torsocks") && dc.at(0).contains("ffplay"),
            "play uses bare ffplay for a non-onion URL");
+        // Senty FINDING-1: mixed-case + trailing-dot .onion must NOT dodge Tor routing.
+        const QStringList tc = op.playerCommandForTest("http://AbcXyZ234host.OnIoN./p/index.m3u8");
+        ok(tc.at(0).contains("torsocks"),
+           "play routes a non-canonical .onion (case/trailing-dot) via torsocks");
     }
 
     printf("=== %s ===\n", fails ? "FAILURES" : "ALL PASS");

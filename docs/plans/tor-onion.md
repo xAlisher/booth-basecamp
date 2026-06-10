@@ -40,7 +40,7 @@ Host (onion mode)                         Tor network                 Listener
 | T6 | Build | `tor` + `torsocks` nix runtime deps + `RADIO_TOR_BIN` / `RADIO_TORSOCKS_BIN` overrides | P0 | ✅ impl (builds) |
 | T7 | UI | Privacy toggle (Public/Onion), show `.onion`/"hidden", 🧅 listen badge, "Connecting over Tor…" | P1 | ✅ impl + test |
 | T8 | Test | direct-test: onion announce carries `.onion` (no IP); play routes `.onion` via torsocks; tor lifecycle | P1 | ✅ done (23/23) |
-| T9 | Harden | No IP leak in onion mode anywhere; torsocks-missing + descriptor-timeout UX; don't log the hostname at info | P2 | — |
+| T9 | Harden | No IP leak in onion mode anywhere; torsocks-missing + descriptor-timeout UX; don't log the hostname at info | P2 | ✅ Senty audit + 4 fixes |
 | T10 | Docs | BRIEF/README: onion mode shipped — usage + residual trade-offs (latency, both need tor) | P2 | — |
 
 > **Runtime-verification pending:** the spike proved the tor+onion+fetch chain and the direct-test proves

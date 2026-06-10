@@ -24,6 +24,14 @@ namespace {
 // Make a spawned child receive SIGKILL if THIS process (logos_host) dies — otherwise a
 // kill -9 of the module (e.g. during relaunch) orphans mediamtx/ffplay, leaking the ports.
 void dieWithParent(QProcess* p) { p->setChildProcessModifier([]{ ::prctl(PR_SET_PDEATHSIG, SIGKILL); }); }
+
+// Canonical .onion test (Senty FINDING-1): QUrl::host() is lowercased, but strip a trailing FQDN
+// dot too — otherwise "Abc.onion." dodges endsWith(".onion") and would play OUTSIDE Tor → IP leak.
+bool isOnionUrl(const QString& url) {
+    QString h = QUrl(url).host().toLower();
+    while (h.endsWith(QLatin1Char('.'))) h.chop(1);
+    return h.endsWith(QLatin1String(".onion"));
+}
 }
 
 // Uniform JSON return shape so the QML bridge is stable. Implemented per-issue
@@ -193,7 +201,9 @@ QString RadioModulePlugin::startStream(const QString& configJson)
                    + "/radio_module/" + m_path;
     m_startedAt   = QDateTime::currentMSecsSinceEpoch();
     m_announceSeq = 0;
-    m_hostLabel   = QSysInfo::machineHostName();
+    // Onion mode must not deanonymize via the machine hostname (Senty FINDING-3) — it ships in
+    // every announce and shows in the listener UI. Use a neutral label.
+    m_hostLabel   = (m_privacy == "onion") ? QStringLiteral("anonymous") : QSysInfo::machineHostName();
     // Public → directory topic; private → unguessable per-stream topic (shared out-of-band).
     m_announceTopic = (m_visibility == "private")
                       ? QStringLiteral("/radio-basecamp/1/%1/json").arg(m_path)
@@ -211,7 +221,9 @@ QString RadioModulePlugin::startStream(const QString& configJson)
         if (!ensureTor(true)) { killMediaMtx(); return err("tor_failed"); }
     }
 
-    const QString ip = lanIp();
+    // Onion mode: OBS is local to MediaMTX, so the ingest card uses loopback — never expose lanIp()
+    // on any surface, including the host's own card (Senty FINDING-2).
+    const QString ip = (m_privacy == "onion") ? QStringLiteral("127.0.0.1") : lanIp();
     const int hls = port("RADIO_HLS_PORT", 8888), whip = port("RADIO_WHIP_PORT", 8889),
               rtmp = port("RADIO_RTMP_PORT", 1935), srt = port("RADIO_SRT_PORT", 8890);
     const QString auth = QStringLiteral("user=publisher&pass=%1").arg(m_streamKey);
@@ -502,7 +514,7 @@ QString RadioModulePlugin::startFfplay()
 {
     killPlayer();
     // A .onion stream needs a local tor SOCKS proxy (no hidden service for listening).
-    if (QUrl(m_playingUrl).host().endsWith(QLatin1String(".onion")) && !ensureTor(false))
+    if (isOnionUrl(m_playingUrl) && !ensureTor(false))
         return QStringLiteral("tor_failed");
     const QPair<QString, QStringList> cmd = buildPlayerCommand(m_playingUrl);
     m_player = new QProcess(this);
@@ -530,7 +542,7 @@ QPair<QString, QStringList> RadioModulePlugin::buildPlayerCommand(const QString&
     ffargs << "-nodisp" << "-autoexit" << "-loglevel" << "error"
            << "-volume" << QString::number(m_volume) << url;
     // ffmpeg has no native SOCKS; route .onion playback through torsocks (LD_PRELOAD → tor SOCKS).
-    if (QUrl(url).host().endsWith(QLatin1String(".onion"))) {
+    if (isOnionUrl(url)) {
         const QString torsocks = qEnvironmentVariable("RADIO_TORSOCKS_BIN", QStringLiteral("torsocks"));
         return { torsocks, QStringList() << ffplay << ffargs };
     }
@@ -549,6 +561,11 @@ bool RadioModulePlugin::ensureTor(bool withHiddenService)
     const QString dataDir = m_torDir + "/data", hsDir = m_torDir + "/hs",
                   logFile = m_torDir + "/tor.log", torrc = m_torDir + "/torrc";
     if (!QDir().mkpath(dataDir)) return false;
+    // Tor state (key material, data, log) must not be world-readable (Senty FINDING-4).
+    const QFileDevice::Permissions ownerOnly =
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner;
+    QFile::setPermissions(m_torDir, ownerOnly);
+    QFile::setPermissions(dataDir, ownerOnly);
 
     QString cfg;
     QTextStream s(&cfg);
