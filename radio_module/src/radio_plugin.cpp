@@ -17,6 +17,14 @@
 #include <QSysInfo>
 #include <QUrl>
 #include <QRegularExpression>
+#include <csignal>
+#include <sys/prctl.h>
+
+namespace {
+// Make a spawned child receive SIGKILL if THIS process (logos_host) dies — otherwise a
+// kill -9 of the module (e.g. during relaunch) orphans mediamtx/ffplay, leaking the ports.
+void dieWithParent(QProcess* p) { p->setChildProcessModifier([]{ ::prctl(PR_SET_PDEATHSIG, SIGKILL); }); }
+}
 
 // Uniform JSON return shape so the QML bridge is stable. Implemented per-issue
 // (see docs/plans/radio-implementation.md); remaining methods are stubs.
@@ -134,6 +142,7 @@ QString RadioModulePlugin::spawnMediaMtx(const QString& configPath)
     const QString bin = qEnvironmentVariable("RADIO_MEDIAMTX_BIN", QStringLiteral("mediamtx"));
     m_mediamtx = new QProcess(this);
     m_mediamtx->setProcessChannelMode(QProcess::MergedChannels);
+    dieWithParent(m_mediamtx);   // #15/ops: don't orphan + leak ports on kill -9
     m_mediamtx->start(bin, QStringList() << configPath);
     if (!m_mediamtx->waitForStarted(5000)) {
         const bool notFound = m_mediamtx->error() == QProcess::FailedToStart;
@@ -447,6 +456,7 @@ QString RadioModulePlugin::startFfplay()
     killPlayer();
     const QString bin = qEnvironmentVariable("RADIO_FFPLAY_BIN", QStringLiteral("ffplay"));
     m_player = new QProcess(this);
+    dieWithParent(m_player);
     m_player->start(bin, QStringList() << "-nodisp" << "-autoexit" << "-loglevel" << "error"
                                        << "-volume" << QString::number(m_volume) << m_playingUrl);
     if (!m_player->waitForStarted(5000)) {
