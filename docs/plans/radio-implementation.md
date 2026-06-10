@@ -172,8 +172,13 @@ human copy and shows a dismissable error **banner** (`implicitHeight`, not `heig
 routed through it: start/play/addTopic/startDiscovery.
 - **Proof:** integration-test drives a real failed Start (mediamtx absent in the sandbox) → banner shows
   "Broadcast server (MediaMTX) isn't available on this system." — end-to-end error surfacing verified.
-**#16 — LGX packaging + install.** `nix bundle ... #dual`, `lgpm` install recipe; relaunch script.
-  Reuse: `builder-lgx-install-recipe`, `lgx-package-format`.
+**#16 — LGX packaging + install.** ✅ **DONE (2026-06-10).** Both `.lgx` build via the **built-in
+targets** — `radio_module#lgx-portable` (core, bundles boost/ssl/crypto + the `.so`, variant
+`linux-amd64`) and `radio_ui#lgx` (QML, variant `linux-amd64-dev`). The external `#dual` bundler is
+broken (`builder-lgx-install-recipe`) — not used. `scripts/install.sh` builds both + `lgpm`-installs to
+**LogosBasecamp** (not LogosApp); `scripts/relaunch.sh` kills `logos_host` + restarts the AppImage.
+- **Proof:** both `nix build .#lgx*` green; tarballs verified (bare paths `manifest.json` + `variants/…`).
+  Install/relaunch not run here — they touch the shared Basecamp runtime (left for the cross-machine demo).
 **#17 — README + user docs** (mirror beacon/stash README shape).
 **#18 — Security pass.** ✅ **DONE (2026-06-10, runtime-proven).** Fixes:
   - **Stream-hijack (headline):** the public `path` and the **secret 128-bit publish key are now

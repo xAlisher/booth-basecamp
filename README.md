@@ -76,6 +76,15 @@ cd radio_module && nix build     # → result/lib/radio_module_plugin.so
 cd ../radio_ui   && nix run .     # launches the UI in logos-standalone-app
 ```
 
+### Install into Logos Basecamp
+
+```bash
+./scripts/install.sh    # builds both .lgx and lgpm-installs to LogosBasecamp
+./scripts/relaunch.sh   # kills logos_host + restarts the AppImage
+```
+
+`radio_module` depends on `delivery_module` — install that too (it ships with the platform).
+
 ## Test (headless)
 
 ```bash
