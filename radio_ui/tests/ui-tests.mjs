@@ -54,8 +54,8 @@ test("radio_ui: Tor privacy toggle instantiates, onion default (T7)", async (app
 });
 
 test("radio_ui: activity log panel instantiates (#12)", async (app) => {
-  // Append-only timestamped event log with copy/clear (qml-activitylog-component).
-  await app.expectTexts(["Activity", "Clear"]);
+  // Fixed-height keycard-style ActivityLog (copy/clear are icons now, so check the header label).
+  await app.expectTexts(["Activity"]);
 });
 
 // Tap-to-play with live stations needs delivery_module announces → cross-machine demo.

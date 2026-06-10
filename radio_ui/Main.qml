@@ -30,7 +30,6 @@ Item {
     property string onionAddr:    ""          // our .onion once published (onion mode)
     property bool   onionReady:   false        // hidden-service descriptor published → reachable
     property string onionError:   ""           // non-empty → Tor setup failed/timed out
-    property bool   logOpen:      true         // activity log panel expanded (#12)
     property var    stations:     []
     property string playingName:  ""
     property bool   discoveryStarted: false
@@ -454,45 +453,63 @@ Item {
             }
         }
 
-        // ── Activity log (#12 / #15): timestamped record of every pill change + error ─────────
+        // ── Activity log (#12) — keycard ActivityLog: fixed height, top border, icon copy button ──
         Rectangle {
             Layout.fillWidth: true; Layout.leftMargin: 16; Layout.rightMargin: 16; Layout.bottomMargin: 10
+            Layout.preferredHeight: 172   // fixed size — does not float with content (matches keycard)
             color: root.bgSecondary; radius: 6
-            implicitHeight: actCol.implicitHeight + 12
-            ColumnLayout {
-                id: actCol
-                anchors.fill: parent; anchors.margins: 6; spacing: 4
-                RowLayout {
-                    Layout.fillWidth: true; spacing: 8
-                    Label { text: "Activity"; color: root.textSecondary; font.pixelSize: 12; font.bold: true }
-                    Label { text: "(" + logModel.count + ")"; color: root.textMuted; font.pixelSize: 11 }
-                    Item { Layout.fillWidth: true }
-                    DarkButton { text: "Copy"; enabled: logModel.count > 0
-                        onClicked: { var s = ""; for (var i = 0; i < logModel.count; i++) { var e = logModel.get(i); s += e.ts + " " + e.msg + "\n" } root.copyText(s) } }
-                    DarkButton { text: "Clear"; enabled: logModel.count > 0; onClicked: logModel.clear() }
-                    DarkButton { text: root.logOpen ? "▾" : "▸"; onClicked: root.logOpen = !root.logOpen }
+
+            // top border
+            Rectangle {
+                anchors { top: parent.top; left: parent.left; right: parent.right }
+                height: 1; color: root.borderColor
+            }
+            Text { anchors { top: parent.top; left: parent.left; topMargin: 8; leftMargin: 12 }
+                   text: "Activity"; color: root.textSecondary; font.pixelSize: 12; font.bold: true }
+
+            // clear icon
+            Rectangle {
+                visible: logModel.count > 0
+                anchors { top: parent.top; right: copyBtn.left; topMargin: 8; rightMargin: 10 }
+                width: 18; height: 18; color: "transparent"; opacity: clearArea.containsMouse ? 0.9 : 0.45
+                Text { anchors.centerIn: parent; text: "✕"; color: root.textMuted; font.pixelSize: 13 }
+                MouseArea { id: clearArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: logModel.clear() }
+                ToolTip { visible: clearArea.containsMouse; text: "Clear"; delay: 500 }
+            }
+            // copy icon — two overlapping rectangles (keycard ActivityLog style)
+            Rectangle {
+                id: copyBtn
+                anchors { top: parent.top; right: parent.right; topMargin: 8; rightMargin: 10 }
+                width: 20; height: 20; color: "transparent"; opacity: copyArea.containsMouse ? 0.9 : 0.5
+                Behavior on opacity { NumberAnimation { duration: 150 } }
+                Rectangle { x: 3; y: 6; width: 10; height: 10; color: "transparent"; border.color: root.textMuted; border.width: 1; radius: 2 }
+                Rectangle { x: 6; y: 3; width: 10; height: 10; color: root.bgSecondary; border.color: root.textMuted; border.width: 1; radius: 2 }
+                MouseArea {
+                    id: copyArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                    onClicked: { var s = ""; for (var i = 0; i < logModel.count; i++) { var e = logModel.get(i); s += e.ts + " " + e.msg + "\n" }
+                        root.copyText(s); copyBtn.opacity = 0.25; copyFb.restart() }
                 }
-                ListView {
-                    id: logList
-                    visible: root.logOpen
-                    Layout.fillWidth: true; Layout.preferredHeight: root.logOpen ? 130 : 0
-                    clip: true; model: logModel; spacing: 4
-                    ScrollBar.vertical: ScrollBar {}
-                    delegate: TextEdit {  // keycard ActivityLog row: monospace "ts message", colored by level
-                        width: logList.width
-                        text: model.ts + " " + model.msg
-                        color: root.levelColor(model.level)
-                        font.pixelSize: 11; font.family: "monospace"
-                        wrapMode: TextEdit.WordWrap
-                        readOnly: true; selectByMouse: true; selectByKeyboard: true
-                    }
-                }
-                Label {
-                    visible: logModel.count === 0
-                    text: "No activity yet"; color: root.textMuted; font.pixelSize: 11
-                    Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+                ToolTip { visible: copyArea.containsMouse; text: "Copy all"; delay: 500 }
+            }
+            Timer { id: copyFb; interval: 200; onTriggered: copyBtn.opacity = copyArea.containsMouse ? 0.9 : 0.5 }
+
+            ListView {
+                id: logList
+                anchors { top: parent.top; left: parent.left; right: parent.right; bottom: parent.bottom
+                          topMargin: 30; leftMargin: 12; rightMargin: 12; bottomMargin: 10 }
+                spacing: 4; clip: true; model: logModel
+                ScrollBar.vertical: ScrollBar {}
+                delegate: TextEdit {  // monospace "ts message", colored by level
+                    width: logList.width
+                    text: model.ts + " " + model.msg
+                    color: root.levelColor(model.level)
+                    font.pixelSize: 11; font.family: "monospace"
+                    wrapMode: TextEdit.WordWrap
+                    readOnly: true; selectByMouse: true; selectByKeyboard: true
                 }
             }
+            Text { visible: logModel.count === 0; anchors.centerIn: parent
+                   text: "No activity yet"; color: root.textMuted; font.pixelSize: 11 }
         }
     }
 }
