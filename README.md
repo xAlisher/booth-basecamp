@@ -158,4 +158,5 @@ for exactly what each test proves and what still needs the running AppImage.
 
 ## License
 
-TBD.
+Free and open source, dual-licensed under either of [MIT](LICENSE-MIT) or
+[Apache-2.0](LICENSE-APACHE) at your option — matching the Logos ecosystem convention.
