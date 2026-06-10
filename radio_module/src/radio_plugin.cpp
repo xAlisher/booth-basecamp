@@ -456,9 +456,12 @@ QString RadioModulePlugin::getStations()
 
 QString RadioModulePlugin::buildAnnouncePayload(int seq) const
 {
-    // Onion mode advertises the .onion (no IP, hidden service maps :80); else the direct LAN URL.
-    const QString hls = (m_privacy == "onion" && !m_onion.isEmpty())
-        ? QStringLiteral("http://%1/%2/index.m3u8").arg(m_onion, m_path)
+    // Onion mode advertises the .onion (no IP). Defense-in-depth (Senty): onion mode NEVER falls back
+    // to lanIp() — if the descriptor isn't up yet it yields an empty URL (and announceOnce is gated on
+    // onionReady anyway), so a real IP can't leak even if the gate were bypassed.
+    const QString hls = (m_privacy == "onion")
+        ? (m_onion.isEmpty() ? QString()
+                             : QStringLiteral("http://%1/%2/index.m3u8").arg(m_onion, m_path))
         : QStringLiteral("http://%1:%2/%3/index.m3u8").arg(lanIp()).arg(port("RADIO_HLS_PORT", 8888)).arg(m_path);
     const QJsonObject a{
         {"v", 1}, {"name", m_streamName}, {"host", m_hostLabel}, {"path", m_path},
