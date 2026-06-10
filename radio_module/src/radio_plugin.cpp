@@ -278,6 +278,12 @@ QString RadioModulePlugin::stopStream()
 {
     if (!m_mediamtx) return err("not_streaming");
     m_heartbeat.stop();
+    // #14: tell listeners we're going offline so they drop us at once (not after the 45s TTL).
+    if (!m_path.isEmpty() && !m_announceTopic.isEmpty() && ensureDeliveryNode()) {
+        const QString bye = QString::fromUtf8(QJsonDocument(QJsonObject{
+            {"v", 1}, {"type", "offline"}, {"path", m_path}}).toJson(QJsonDocument::Compact));
+        m_delivery->invokeRemoteMethod("delivery_module", "send", m_announceTopic, bye);
+    }
     killMediaMtx();
     // Tear down ONLY the hidden-service tor — never the listener SOCKS tor, which may still be in
     // use by an active onion playback session (Senty ISSUE-2).
@@ -453,8 +459,14 @@ void RadioModulePlugin::ingestAnnounce(const QString& base64Payload)
     const QByteArray json = QByteArray::fromBase64(base64Payload.toUtf8());  // single decode
     const QJsonObject o = QJsonDocument::fromJson(json).object();
     const QString path = o.value("path").toString();
-    if (path.isEmpty() || o.value("name").toString().isEmpty()) return;  // malformed
+    if (path.isEmpty()) return;
     if (!m_path.isEmpty() && path == m_path) return;                     // self-echo filter
+    // #14: an explicit offline announce drops the station immediately (don't wait for the 45s TTL).
+    if (o.value("type").toString() == QLatin1String("offline")) {
+        if (m_stations.remove(path) > 0) emit eventResponse("stationsChanged", QVariantList() << path);
+        return;
+    }
+    if (o.value("name").toString().isEmpty()) return;                    // malformed
 
     QJsonObject station = o;
     station["_lastSeen"] = QDateTime::currentMSecsSinceEpoch();  // TTL pruning → #11

@@ -146,6 +146,18 @@ int main(int argc, char** argv) {
         qunsetenv("RADIO_TTL_MS");
     }
 
+    // --- #14 offline announce drops the station immediately (no waiting for TTL) ---
+    {
+        auto has = [&](const QString& pth){
+            const QJsonArray sa = QJsonDocument::fromJson(p.getStations().toUtf8()).object().value("stations").toArray();
+            for (const auto v : sa) if (v.toObject().value("path").toString() == pth) return true;
+            return false; };
+        p.ingestAnnounce(b64("{\"v\":1,\"name\":\"Bye FM\",\"path\":\"byep\",\"host\":\"z\",\"streamUrl\":\"http://h/byep/index.m3u8\"}"));
+        const bool before = has("byep");
+        p.ingestAnnounce(b64("{\"v\":1,\"type\":\"offline\",\"path\":\"byep\"}"));
+        ok(before && !has("byep"), "offline announce removes the station immediately (#14)");
+    }
+
     // --- #18 security: player allowlist + topic validation (inputs are attacker-controlled) ---
     ok(QJsonDocument::fromJson(p.play("/etc/passwd", "x").toUtf8()).object().value("error").toString() == "unsafe_url",
        "play rejects a non-http path");

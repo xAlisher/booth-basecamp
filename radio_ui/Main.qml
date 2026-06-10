@@ -396,6 +396,12 @@ Item {
                                 }
                                 Label { text: (modelData.host || "") + " · " + root.uptime(modelData.startedAt)
                                         color: root.textSecondary; font.pixelSize: 12 }
+                                Label {  // #13 — station description
+                                    visible: (modelData.description || "").length > 0
+                                    text: modelData.description || ""
+                                    color: root.textMuted; font.pixelSize: 11
+                                    Layout.fillWidth: true; elide: Text.ElideRight
+                                }
                             }
                         }
                     }
