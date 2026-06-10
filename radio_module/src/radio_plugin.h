@@ -81,6 +81,7 @@ private:
     QString  directoryTopic() const;       // well-known public directory topic
     bool     subscribeTopic(const QString& topic);
     bool     ensureDeliveryNode();         // idempotent delivery_module getClient + createNode + start
+    void     checkDeliveryHealth();        // poll delivery_module node reachability for the status pill
     void     killPlayer();                 // stop + reap the ffplay process (#9)
     QString  startFfplay();                // (re)launch ffplay on m_playingUrl; "" ok else error code
 
@@ -104,8 +105,10 @@ private:
     LogosAPIClient* m_delivery = nullptr;
     LogosObject*    m_deliveryObj = nullptr;
     bool            m_deliveryNodeUp = false;
+    bool            m_deliveryReachable = false;  // node answered getNodeInfo → pill green
     bool            m_discovering = false;
-    QString         m_deliveryPeerId;   // cached once at node init (for the status pill)
+    QString         m_deliveryPeerId;
+    QTimer          m_deliveryHealth;   // periodic delivery_module reachability check
     QSet<QString>   m_subscribedTopics;
     QMap<QString, QJsonObject> m_stations;  // keyed by path; value carries "_lastSeen" ms (TTL → #11)
 

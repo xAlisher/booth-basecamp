@@ -50,6 +50,8 @@ RadioModulePlugin::RadioModulePlugin(QObject* parent) : QObject(parent)
     qDebug() << "RadioModulePlugin: constructed";
     // #10 heartbeat: re-announce on a fixed interval while streaming.
     connect(&m_heartbeat, &QTimer::timeout, this, [this]{ announceOnce(); });
+    // Status pill: poll delivery_module reachability.
+    connect(&m_deliveryHealth, &QTimer::timeout, this, [this]{ checkDeliveryHealth(); });
 }
 
 RadioModulePlugin::~RadioModulePlugin()
@@ -63,7 +65,8 @@ void RadioModulePlugin::initLogos(LogosAPI* api)
 {
     logosAPI = api;  // base PluginInterface member — ModuleProxy reads this for IPC. Do NOT shadow it.
     qDebug() << "RadioModulePlugin: initLogos";
-    // Issue #5: pre-init delivery_module client here (eager init; skill ipc-client-eager-init).
+    // Start the delivery-health poll deferred (skill ipc-client-eager-init: don't getClient in initLogos directly).
+    QTimer::singleShot(2500, this, [this]{ checkDeliveryHealth(); m_deliveryHealth.start(5000); });
     emit eventResponse("initialized", QVariantList() << "radio_module" << "0.1.0");
 }
 
@@ -322,12 +325,25 @@ bool RadioModulePlugin::ensureDeliveryNode()
     return true;
 }
 
+void RadioModulePlugin::checkDeliveryHealth()
+{
+    auto* c = logosAPI ? logosAPI->getClient("delivery_module") : nullptr;
+    if (!c) { m_deliveryReachable = false; return; }
+    // The delivery_module node comes up on its own at load; ask for our peer id to confirm it answers.
+    const QVariant r = c->invokeRemoteMethod("delivery_module", "getNodeInfo", QStringLiteral("MyPeerId"));
+    const QJsonObject o = QJsonDocument::fromJson(r.toString().toUtf8()).object();
+    const QString pid = o.value("value").toString();
+    m_deliveryReachable = o.value("success").toBool() && !pid.isEmpty();
+    if (m_deliveryReachable) m_deliveryPeerId = pid;
+}
+
 QString RadioModulePlugin::getDeliveryStatus()
 {
     const bool loaded = logosAPI && logosAPI->getClient("delivery_module") != nullptr;
-    const QString state = !loaded         ? QStringLiteral("offline")     // delivery_module not present
-                        : m_deliveryNodeUp ? QStringLiteral("connected")   // our node is up
-                                           : QStringLiteral("ready");      // available, not yet subscribed
+    // Green once delivery_module's node actually answers (reachable) or our own node is up.
+    const QString state = !loaded ? QStringLiteral("offline")
+                        : (m_deliveryReachable || m_deliveryNodeUp) ? QStringLiteral("connected")
+                                                                    : QStringLiteral("ready");
     return QString::fromUtf8(QJsonDocument(QJsonObject{
         {"ok", true}, {"state", state}, {"peerId", m_deliveryPeerId}
     }).toJson(QJsonDocument::Compact));
