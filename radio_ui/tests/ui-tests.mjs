@@ -16,6 +16,11 @@ test("radio_ui: QML loads, both tab labels instantiate", async (app) => {
   );
 });
 
+test("radio_ui: title header instantiates", async (app) => {
+  // Module title (left) + subtitle. The delivery-status pill (right) is dynamic, so not asserted here.
+  await app.expectTexts(["Radio", "Decentralized broadcast & discovery"]);
+});
+
 test("radio_ui: Stream-tab setup-form elements instantiate (#7)", async (app) => {
   await app.expectTexts(["Station name", "Visibility", "Public", "Private", "Start"]);
 });

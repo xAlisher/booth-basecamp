@@ -43,6 +43,7 @@ public:
     Q_INVOKABLE QString startStream(const QString& configJson) override;
     Q_INVOKABLE QString stopStream() override;
     Q_INVOKABLE QString getStreamStatus() override;
+    Q_INVOKABLE QString getDeliveryStatus() override;
     Q_INVOKABLE QString startDiscovery() override;
     Q_INVOKABLE QString addTopic(const QString& topic) override;
     Q_INVOKABLE QString getStations() override;
@@ -104,6 +105,7 @@ private:
     LogosObject*    m_deliveryObj = nullptr;
     bool            m_deliveryNodeUp = false;
     bool            m_discovering = false;
+    QString         m_deliveryPeerId;   // cached once at node init (for the status pill)
     QSet<QString>   m_subscribedTopics;
     QMap<QString, QJsonObject> m_stations;  // keyed by path; value carries "_lastSeen" ms (TTL → #11)
 

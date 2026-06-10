@@ -306,7 +306,22 @@ bool RadioModulePlugin::ensureDeliveryNode()
         QStringLiteral("{\"logLevel\":\"INFO\",\"mode\":\"Core\",\"preset\":\"logos.dev\",\"relay\":true}"));
     m_delivery->invokeRemoteMethod("delivery_module", "start");
     m_deliveryNodeUp = true;
+    // Cache our peer id once for the status pill (avoids per-poll IPC).
+    const QVariant pid = m_delivery->invokeRemoteMethod("delivery_module", "getNodeInfo", QStringLiteral("MyPeerId"));
+    const QJsonObject po = QJsonDocument::fromJson(pid.toString().toUtf8()).object();
+    if (po.value("success").toBool()) m_deliveryPeerId = po.value("value").toString();
     return true;
+}
+
+QString RadioModulePlugin::getDeliveryStatus()
+{
+    const bool loaded = logosAPI && logosAPI->getClient("delivery_module") != nullptr;
+    const QString state = !loaded         ? QStringLiteral("offline")     // delivery_module not present
+                        : m_deliveryNodeUp ? QStringLiteral("connected")   // our node is up
+                                           : QStringLiteral("ready");      // available, not yet subscribed
+    return QString::fromUtf8(QJsonDocument(QJsonObject{
+        {"ok", true}, {"state", state}, {"peerId", m_deliveryPeerId}
+    }).toJson(QJsonDocument::Compact));
 }
 
 QString RadioModulePlugin::startDiscovery()
