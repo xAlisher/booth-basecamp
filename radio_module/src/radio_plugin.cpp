@@ -633,11 +633,15 @@ QString RadioModulePlugin::ensureTorHost()
     s << "SocksPort 0\n"
       << "DataDirectory " << m_torHostDir << "/data\n"
       << "Log notice file " << m_torHostDir << "/tor.log\n"
+      // The HS descriptor upload is logged at INFO in the [rend] (rendezvous) domain — capture just
+      // that (small log) so readiness detection sees the publish (notice level never logs it).
+      << "Log [rend]info file " << m_torHostDir << "/hs.log\n"
       << "HiddenServiceDir " << hsDir << "\n"
       << "HiddenServicePort 80 127.0.0.1:" << port("RADIO_HLS_PORT", 8888) << "\n";
     QString err;
     if (!startTorProc(m_torHost, m_torHostDir, cfg, err)) { m_torHostDir.clear(); return err; }
-    m_onion.clear(); m_onionReady = false; m_onionError.clear(); m_onionPollTicks = 0;
+    m_onion.clear(); m_onionReady = false; m_onionError.clear();
+    m_onionPollTicks = 0; m_onionBootstrapTick = 0;
     m_onionPublishPoll.start(2000);
     return QString();
 }
@@ -660,8 +664,8 @@ QString RadioModulePlugin::ensureTorListen()
 void RadioModulePlugin::pollOnionStatus()
 {
     if (m_torHostDir.isEmpty()) { m_onionPublishPoll.stop(); return; }
-    // Bounded poll (Senty ISSUE-3): give up after ~90s and surface a timeout rather than spin forever.
-    if (++m_onionPollTicks > 45) {
+    // Bounded poll (Senty ISSUE-3): hard cap ~120s before surfacing a real timeout.
+    if (++m_onionPollTicks > 60) {
         m_onionPublishPoll.stop();
         if (!m_onionReady) {
             m_onionError = QStringLiteral("publish_timeout");  // surfaced via getStreamStatus → UI
@@ -674,19 +678,28 @@ void RadioModulePlugin::pollOnionStatus()
         QFile hf(m_torHostDir + "/hs/hostname");
         if (hf.open(QIODevice::ReadOnly)) { m_onion = QString::fromUtf8(hf.readAll()).trimmed(); hf.close(); }
     }
-    if (!m_onion.isEmpty() && !m_onionReady) {
-        QFile lf(m_torHostDir + "/tor.log");
-        if (lf.open(QIODevice::ReadOnly)) {
-            const QString log = QString::fromUtf8(lf.readAll()); lf.close();
-            // tor logs e.g. "Uploaded rendezvous descriptor" / "Successfully uploaded …" on publish.
-            if (log.contains(QLatin1String("uploaded"), Qt::CaseInsensitive)
-                && log.contains(QLatin1String("descriptor"), Qt::CaseInsensitive)) {
-                m_onionReady = true;
-                m_onionPublishPoll.stop();
-                qDebug() << "RadioModulePlugin: onion descriptor published — reachable";
-                emit eventResponse("onionReady", QVariantList() << m_path);  // host id, not the .onion
-            }
-        }
+    if (m_onion.isEmpty() || m_onionReady) return;
+
+    auto fileHas = [](const QString& path, const char* a, const char* b) {
+        QFile f(path); if (!f.open(QIODevice::ReadOnly)) return false;
+        const QString s = QString::fromUtf8(f.readAll()); f.close();
+        return s.contains(QLatin1String(a), Qt::CaseInsensitive)
+            && (!b || s.contains(QLatin1String(b), Qt::CaseInsensitive));
+    };
+    // Precise: the [hs]info log records the descriptor upload to the HSDirs (this is what the old
+    // notice-level grep could NEVER see → it false-timed-out a perfectly reachable onion).
+    bool ready = fileHas(m_torHostDir + "/hs.log", "upload", "descriptor");
+    // Fallback (robust to tor wording/log-level changes): once bootstrapped 100%, the descriptor
+    // publishes within tens of seconds — accept after a short grace so a live onion is never missed.
+    if (!ready && fileHas(m_torHostDir + "/tor.log", "Bootstrapped 100%", nullptr)) {
+        if (m_onionBootstrapTick == 0) m_onionBootstrapTick = m_onionPollTicks;
+        if (m_onionPollTicks - m_onionBootstrapTick >= 12) ready = true;  // ~24s after 100%
+    }
+    if (ready) {
+        m_onionReady = true;
+        m_onionPublishPoll.stop();
+        qDebug() << "RadioModulePlugin: onion descriptor published — reachable";
+        emit eventResponse("onionReady", QVariantList() << m_path);  // host id, not the .onion
     }
 }
 

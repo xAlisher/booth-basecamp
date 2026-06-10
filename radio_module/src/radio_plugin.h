@@ -147,6 +147,7 @@ private:
     bool      m_onionReady = false;  // descriptor published → reachable by listeners
     QString   m_onionError;          // non-empty → onion setup failed/timed out (surfaced to the UI)
     int       m_onionPollTicks = 0;  // bounded descriptor-publish poll (Senty ISSUE-3)
+    int       m_onionBootstrapTick = 0;  // tick when tor hit 100% — grace fallback for readiness
     QTimer    m_onionPublishPoll;    // polls tor.log for the descriptor upload
 };
 
