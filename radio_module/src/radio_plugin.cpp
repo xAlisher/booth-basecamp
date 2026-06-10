@@ -237,8 +237,19 @@ QString RadioModulePlugin::startStream(const QString& configJson)
     // a .onion URL (and reach listeners through NAT without port-forwarding) instead of lanIp().
     m_privacy     = cfg.value("privacy").toString(QStringLiteral("onion"));
 
-    m_path       = randomHex(8);   // 64-bit public stream id
-    m_streamKey  = randomHex(16);  // 128-bit secret publish credential (#18)
+    // #17 — reuse the persisted publish identity so the stream key/path stay STABLE across restarts
+    // (recoverable even if auto-resume raced). Mint fresh only when none exists; "⟳ New" rotates it.
+    m_path.clear(); m_streamKey.clear();
+    {
+        QFile in(stateFile());
+        if (in.open(QIODevice::ReadOnly)) {
+            const QJsonObject st = QJsonDocument::fromJson(in.readAll()).object(); in.close();
+            m_path      = st.value("path").toString();
+            m_streamKey = st.value("streamKey").toString();
+        }
+    }
+    if (m_path.isEmpty())      m_path      = randomHex(8);   // 64-bit public stream id
+    if (m_streamKey.isEmpty()) m_streamKey = randomHex(16);  // 128-bit secret publish credential (#18)
     m_runtimeDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
                    + "/radio_module/" + m_path;
     m_startedAt   = QDateTime::currentMSecsSinceEpoch();
@@ -270,7 +281,7 @@ QString RadioModulePlugin::startStream(const QString& configJson)
     }
 
     m_heartbeat.start(port("RADIO_HEARTBEAT_MS", 15000));  // #10 re-announce while live
-    saveStreamState();  // #11 persist identity so the stream survives a Basecamp restart
+    saveStreamState(true);  // #11 persist identity so the stream survives a Basecamp restart
     qDebug() << "RadioModulePlugin: stream started, path" << m_path;
     emit eventResponse("streamStarted", QVariantList() << m_path);
     return QString::fromUtf8(QJsonDocument(buildCard()).toJson(QJsonDocument::Compact));
@@ -314,7 +325,7 @@ QString RadioModulePlugin::regenerateKey()
     if (cfgPath.isEmpty()) return err("config_write_failed");
     const QString se = spawnMediaMtx(cfgPath);
     if (!se.isEmpty()) return err(se);
-    saveStreamState();
+    saveStreamState(true);
     emit eventResponse("streamKeyRotated", QVariantList() << m_path);
     return QString::fromUtf8(QJsonDocument(buildCard()).toJson(QJsonDocument::Compact));
 }
@@ -346,12 +357,13 @@ QString RadioModulePlugin::persistentHsDir() const
            + "/radio_module/hs";  // #17 stable Tor hidden-service keys (per-profile)
 }
 
-void RadioModulePlugin::saveStreamState() const
+void RadioModulePlugin::saveStreamState(bool running) const
 {
     const QJsonObject st{
         {"name", m_streamName}, {"visibility", m_visibility}, {"description", m_description},
         {"privacy", m_privacy}, {"path", m_path}, {"streamKey", m_streamKey},
-        {"startedAt", m_startedAt}, {"announceTopic", m_announceTopic}, {"hostLabel", m_hostLabel}
+        {"startedAt", m_startedAt}, {"announceTopic", m_announceTopic}, {"hostLabel", m_hostLabel},
+        {"running", running}  // #17 false → keep the identity (key) but don't auto-resume on restart
     };
     const QString f = stateFile();
     QDir().mkpath(QFileInfo(f).absolutePath());
@@ -371,6 +383,8 @@ void RadioModulePlugin::resumeStreamIfPersisted()
     const QJsonObject st = QJsonDocument::fromJson(in.readAll()).object(); in.close();
     const QString path = st.value("path").toString();
     if (path.isEmpty()) return;
+    // #17 — a deliberately-stopped station keeps its identity (key) for reuse, but must NOT auto-resume.
+    if (!st.value("running").toBool(true)) return;  // legacy files (no flag) default to running
     m_streamName    = st.value("name").toString();
     m_visibility    = st.value("visibility").toString(QStringLiteral("public"));
     m_description   = st.value("description").toString();
@@ -415,10 +429,12 @@ QString RadioModulePlugin::stopStream()
     if (!m_runtimeDir.isEmpty()) QDir(m_runtimeDir).removeRecursively();
     qDebug() << "RadioModulePlugin: stream stopped";
     emit eventResponse("streamStopped", QVariantList() << m_path);
+    // #17 — persist the identity as STOPPED: keeps the stream key (so a later Start reuses it / OBS
+    // config stays valid) but won't auto-resume on the next Basecamp restart. "⟳ New" rotates the key.
+    saveStreamState(false);
     m_path.clear(); m_streamKey.clear(); m_streamName.clear(); m_lastStreamState.clear();
     m_announceTopic.clear(); m_startedAt = 0; m_announceSeq = 0;
     m_privacy = QStringLiteral("public"); m_onion.clear(); m_onionReady = false; m_onionError.clear();
-    clearStreamState();  // #11 — don't auto-resume a deliberately-stopped stream
     return ok();
 }
 

@@ -85,7 +85,7 @@ private:
     QJsonObject buildCard() const;
     QString  stateFile() const;
     QString  persistentHsDir() const;  // #17 persistent Tor HiddenServiceDir → stable .onion
-    void     saveStreamState() const;
+    void     saveStreamState(bool running) const;
     void     clearStreamState() const;
     void     resumeStreamIfPersisted();
     QString  lanIp() const;                // first non-loopback IPv4, else 127.0.0.1

@@ -116,10 +116,15 @@ int main(int argc, char** argv) {
     QThread::msleep(800);
     ok(!mtxApiUp(apiPort), "MediaMTX down after stopStream");
 
-    // --- uniqueness: a second stream mints a different path ---
-    const QString path2 = QJsonDocument::fromJson(
-        p.startStream("{\"name\":\"Test2\",\"visibility\":\"public\",\"privacy\":\"public\"}").toUtf8()).object().value("path").toString();
-    ok(!path2.isEmpty() && path2 != path1, "second stream path is unique");
+    // --- #17 persistence: stop+start REUSES the same identity (stable key/path; OBS stays valid) ---
+    const QJsonObject card2 = QJsonDocument::fromJson(
+        p.startStream("{\"name\":\"Test2\",\"visibility\":\"public\",\"privacy\":\"public\"}").toUtf8()).object();
+    ok(card2.value("path").toString() == path1, "path reused across stop+start (#17)");
+    ok(card2.value("streamKey").toString() == card.value("streamKey").toString(),
+       "stream key persists across stop+start (#17)");
+    // regenerateKey rotates it on demand
+    const QString rotated = QJsonDocument::fromJson(p.regenerateKey().toUtf8()).object().value("streamKey").toString();
+    ok(!rotated.isEmpty() && rotated != card2.value("streamKey").toString(), "regenerateKey rotates the key (#17)");
     p.stopStream();
 
     // --- #5 discovery: ingestAnnounce decodes base64, stores, self-echo + malformed filtered ---
