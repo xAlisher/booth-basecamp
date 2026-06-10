@@ -18,8 +18,10 @@
 #include <QSysInfo>
 #include <QUrl>
 #include <QRegularExpression>
+#include <QFileInfo>
 #include <csignal>
 #include <sys/prctl.h>
+#include <dlfcn.h>
 
 namespace {
 // Make a spawned child receive SIGKILL if THIS process (logos_host) dies — otherwise a
@@ -32,6 +34,25 @@ bool isOnionUrl(const QString& url) {
     QString h = QUrl(url).host().toLower();
     while (h.endsWith(QLatin1Char('.'))) h.chop(1);
     return h.endsWith(QLatin1String(".onion"));
+}
+
+// Directory of this plugin .so (so the module can find binaries bundled alongside it).
+QString moduleDir() {
+    Dl_info info;
+    if (dladdr(reinterpret_cast<void*>(&isOnionUrl), &info) && info.dli_fname)
+        return QFileInfo(QString::fromUtf8(info.dli_fname)).absolutePath();
+    return QString();
+}
+// Resolve a runtime helper binary: explicit env override → bundled (next to the .so, in bin/ or the
+// module dir) → bare name on PATH. Lets the .lgx ship self-contained without a system install.
+QString resolveBin(const QString& name, const char* envVar) {
+    const QString env = qEnvironmentVariable(envVar);
+    if (!env.isEmpty()) return env;
+    const QString d = moduleDir();
+    if (!d.isEmpty())
+        for (const QString& c : { d + "/bin/" + name, d + "/" + name })
+            if (QFileInfo(c).isExecutable()) return c;
+    return name;  // fall back to PATH
 }
 }
 
@@ -155,7 +176,7 @@ QString RadioModulePlugin::writeMediaMtxConfig() const
 QString RadioModulePlugin::spawnMediaMtx(const QString& configPath)
 {
     killMediaMtx();
-    const QString bin = qEnvironmentVariable("RADIO_MEDIAMTX_BIN", QStringLiteral("mediamtx"));
+    const QString bin = resolveBin(QStringLiteral("mediamtx"), "RADIO_MEDIAMTX_BIN");
     m_mediamtx = new QProcess(this);
     m_mediamtx->setProcessChannelMode(QProcess::MergedChannels);
     dieWithParent(m_mediamtx);   // #15/ops: don't orphan + leak ports on kill -9
@@ -570,13 +591,13 @@ QString RadioModulePlugin::startFfplay()
 
 QPair<QString, QStringList> RadioModulePlugin::buildPlayerCommand(const QString& url) const
 {
-    const QString ffplay = qEnvironmentVariable("RADIO_FFPLAY_BIN", QStringLiteral("ffplay"));
+    const QString ffplay = resolveBin(QStringLiteral("ffplay"), "RADIO_FFPLAY_BIN");
     QStringList ffargs;
     ffargs << "-nodisp" << "-autoexit" << "-loglevel" << "error"
            << "-volume" << QString::number(m_volume) << url;
     // ffmpeg has no native SOCKS; route .onion playback through torsocks (LD_PRELOAD → tor SOCKS).
     if (isOnionUrl(url)) {
-        const QString torsocks = qEnvironmentVariable("RADIO_TORSOCKS_BIN", QStringLiteral("torsocks"));
+        const QString torsocks = resolveBin(QStringLiteral("torsocks"), "RADIO_TORSOCKS_BIN");
         return { torsocks, QStringList() << ffplay << ffargs };
     }
     return { ffplay, ffargs };
@@ -584,7 +605,7 @@ QPair<QString, QStringList> RadioModulePlugin::buildPlayerCommand(const QString&
 
 bool RadioModulePlugin::startTorProc(QProcess*& proc, const QString& dir, const QString& cfg, QString& errOut)
 {
-    const QString bin = qEnvironmentVariable("RADIO_TOR_BIN", QStringLiteral("tor"));
+    const QString bin = resolveBin(QStringLiteral("tor"), "RADIO_TOR_BIN");
     const QString dataDir = dir + "/data", torrc = dir + "/torrc";
     // Remove the temp tree on any failure so a failed start leaves nothing on disk (Senty ISSUE-5).
     auto fail = [&](const QString& code) { QDir(dir).removeRecursively(); errOut = code; return false; };
