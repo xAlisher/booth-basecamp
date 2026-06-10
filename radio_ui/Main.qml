@@ -374,15 +374,22 @@ Item {
                             text: "In OBS → Settings → Stream: set Service to “Custom…”, paste the RTMP Server and Stream Key below, then Start Streaming. The key is secret — don't share it."
                         }
                         component CopyRow: RowLayout {
+                            id: cr
                             property string label: ""
                             property string value: ""
+                            property bool secret: false   // masked with dots (safe for screenshots)
+                            property bool revealed: false
                             Layout.fillWidth: true; spacing: 8
-                            Label { text: parent.label; color: root.textSecondary; Layout.preferredWidth: 90; font.pixelSize: 12 }
-                            DarkField { Layout.fillWidth: true; readOnly: true; text: parent.value }
-                            DarkButton { text: "Copy"; onClicked: root.copyText(parent.value) }
+                            Label { text: cr.label; color: root.textSecondary; Layout.preferredWidth: 90; font.pixelSize: 12 }
+                            DarkField {
+                                Layout.fillWidth: true; readOnly: true; text: cr.value
+                                echoMode: (cr.secret && !cr.revealed) ? TextInput.Password : TextInput.Normal
+                            }
+                            DarkButton { visible: cr.secret; text: cr.revealed ? "Hide" : "Show"; onClicked: cr.revealed = !cr.revealed }
+                            DarkButton { text: "Copy"; onClicked: root.copyText(cr.value) }   // copies the real value
                         }
                         CopyRow { label: "RTMP Server"; value: root.streamCard ? root.streamCard.rtmpUrl : "" }
-                        CopyRow { label: "Stream Key"; value: root.streamCard ? root.streamCard.streamKey : "" }
+                        CopyRow { label: "Stream Key"; value: root.streamCard ? root.streamCard.streamKey : ""; secret: true }
                         DarkButton { text: "Stop"; onClicked: root.stopStream() }
                     }
                     Item { Layout.fillHeight: true }
@@ -431,7 +438,7 @@ Item {
                         Layout.fillWidth: true; spacing: 8
                         BusyIndicator { running: root.discoveryStarted; Layout.alignment: Qt.AlignHCenter; implicitWidth: 28; implicitHeight: 28 }
                         Label {
-                            text: root.discoveryStarted ? "Listening for stations…" : "Open to discover stations"
+                            text: root.discoveryStarted ? "Searching for stations…" : "Open to discover stations"
                             color: root.textMuted; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                         }
                     }
