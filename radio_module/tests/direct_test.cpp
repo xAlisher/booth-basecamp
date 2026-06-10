@@ -133,6 +133,11 @@ int main(int argc, char** argv) {
         auto pstate = [&]{ return QJsonDocument::fromJson(p.getPlayerStatus().toUtf8())
                                .object().value("state").toString(); };
         ok(pstate() == "playing", "play: ffplay running");
+        // #13 controls (live = Play/Stop/Volume; no pause): setVolume reflected, stop → stopped
+        const int vol = QJsonDocument::fromJson(p.setVolume(40).toUtf8()).object().value("volume").toInt();
+        ok(vol == 40, "setVolume: clamps + reports volume");
+        QThread::msleep(300);
+        ok(pstate() == "playing", "still playing after volume change");
         p.stop();
         QThread::msleep(400);
         ok(pstate() == "stopped", "stop: player stopped");

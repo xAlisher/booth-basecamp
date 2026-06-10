@@ -47,13 +47,13 @@ public:
     Q_INVOKABLE virtual QString getStations() = 0;
 
     // --- Playback (listener side) — Epic E/G ---
-    /** Play an HLS .m3u8 via ffplay (#9). @return {ok, duration?} */
+    /** Play an HLS .m3u8 via ffplay (#9). @return {ok} */
     Q_INVOKABLE virtual QString play(const QString& hlsUrl, const QString& stationName) = 0;
-    Q_INVOKABLE virtual QString pause() = 0;            // #13
-    Q_INVOKABLE virtual QString resume() = 0;           // #13
-    Q_INVOKABLE virtual QString stop() = 0;             // #13
+    Q_INVOKABLE virtual QString stop() = 0;             // #9
+    // No pause for live radio — pausing a live stream is just stop (the live edge moves on and
+    // MediaMTX rotates the HLS segments away). Controls are Play / Stop / Volume.
     Q_INVOKABLE virtual QString setVolume(int percent) = 0; // #13
-    /** @return {state:"stopped"|"playing"|"paused", station, volume} (#9 #13) */
+    /** @return {state:"stopped"|"playing", station, volume} (#9 #13) */
     Q_INVOKABLE virtual QString getPlayerStatus() = 0;
 };
 

@@ -405,22 +405,37 @@ void RadioModulePlugin::killPlayer()
     m_player = nullptr;
 }
 
-QString RadioModulePlugin::play(const QString& hlsUrl, const QString& stationName)
+bool RadioModulePlugin::startFfplay()
 {
-    if (hlsUrl.isEmpty()) return err("no_url");
     killPlayer();
     const QString bin = qEnvironmentVariable("RADIO_FFPLAY_BIN", QStringLiteral("ffplay"));
     m_player = new QProcess(this);
-    m_player->start(bin, QStringList() << "-nodisp" << "-autoexit" << "-loglevel" << "error" << hlsUrl);
+    m_player->start(bin, QStringList() << "-nodisp" << "-autoexit" << "-loglevel" << "error"
+                                       << "-volume" << QString::number(m_volume) << m_playingUrl);
     if (!m_player->waitForStarted(5000)) {
         qWarning() << "RadioModulePlugin: ffplay failed:" << m_player->errorString();
         killPlayer();
-        return err("ffplay_failed");
+        return false;
     }
-    m_playingStation = stationName;
+    return true;
+}
+
+QString RadioModulePlugin::play(const QString& hlsUrl, const QString& stationName)
+{
+    if (hlsUrl.isEmpty()) return err("no_url");
     m_playingUrl = hlsUrl;
+    m_playingStation = stationName;
+    if (!startFfplay()) { m_playingUrl.clear(); m_playingStation.clear(); return err("ffplay_failed"); }
     emit eventResponse("playerStatusChanged", QVariantList() << "playing" << stationName);
     return ok();
+}
+
+QString RadioModulePlugin::setVolume(int percent)  // #13 — ffplay has no runtime volume; restart
+{
+    m_volume = qBound(0, percent, 100);
+    if (m_player) startFfplay();  // brief gap; live HLS reconnects at the edge
+    return QString::fromUtf8(QJsonDocument(QJsonObject{{"ok", true}, {"volume", m_volume}})
+                                 .toJson(QJsonDocument::Compact));
 }
 
 QString RadioModulePlugin::stop()
@@ -435,14 +450,9 @@ QString RadioModulePlugin::stop()
 
 QString RadioModulePlugin::getPlayerStatus()
 {
-    const bool playing = m_player && m_player->state() != QProcess::NotRunning;
+    const bool running = m_player && m_player->state() != QProcess::NotRunning;
     return QString::fromUtf8(QJsonDocument(QJsonObject{
-        {"ok", true},
-        {"state", playing ? "playing" : "stopped"},
-        {"station", m_playingStation}
+        {"ok", true}, {"state", running ? "playing" : "stopped"},
+        {"station", m_playingStation}, {"volume", m_volume}
     }).toJson(QJsonDocument::Compact));
 }
-
-QString RadioModulePlugin::pause()                      { return notImplemented("pause"); }              // #13
-QString RadioModulePlugin::resume()                     { return notImplemented("resume"); }             // #13
-QString RadioModulePlugin::setVolume(int)               { return notImplemented("setVolume"); }          // #13

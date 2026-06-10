@@ -47,8 +47,6 @@ public:
     Q_INVOKABLE QString addTopic(const QString& topic) override;
     Q_INVOKABLE QString getStations() override;
     Q_INVOKABLE QString play(const QString& hlsUrl, const QString& stationName) override;
-    Q_INVOKABLE QString pause() override;
-    Q_INVOKABLE QString resume() override;
     Q_INVOKABLE QString stop() override;
     Q_INVOKABLE QString setVolume(int percent) override;
     Q_INVOKABLE QString getPlayerStatus() override;
@@ -83,6 +81,7 @@ private:
     bool     subscribeTopic(const QString& topic);
     bool     ensureDeliveryNode();         // idempotent delivery_module getClient + createNode + start
     void     killPlayer();                 // stop + reap the ffplay process (#9)
+    bool     startFfplay();                // (re)launch ffplay on m_playingUrl at m_volume (#9/#13)
 
     // NB: do NOT declare a LogosAPI* member — initLogos must set the base PluginInterface::logosAPI,
     // which ModuleProxy reads for cross-module IPC (skills: logosapi-member-no-redeclare, initlogos-no-override).
@@ -110,6 +109,7 @@ private:
     // Listener playback (#9) — ffplay subprocess (Qt Multimedia absent; skill ffplay-subprocess-player).
     QProcess* m_player = nullptr;
     QString   m_playingStation, m_playingUrl;
+    int       m_volume = 75;      // #13 0–100; applied via ffplay -volume
 };
 
 #endif // RADIO_MODULE_PLUGIN_H

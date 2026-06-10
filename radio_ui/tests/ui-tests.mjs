@@ -27,7 +27,12 @@ test("radio_ui: status light instantiates with default-state label (#8)", async 
 });
 test("radio_ui: Listen-tab elements instantiate (#9)", async (app) => {
   // empty-state label + Add button (station rows + play need live backend data → real app)
-  await app.expectTexts(["Listen", "No live stations yet…", "Add"]);
+  await app.expectTexts(["Listen", "Open to discover stations", "Add"]);
+});
+
+test("radio_ui: empty/transitional state copy (#14)", async (app) => {
+  // Stream status (idle→"Waiting for OBS…") + Listen empty state both instantiate.
+  await app.expectTexts(["Waiting for OBS…", "Open to discover stations"]);
 });
 
 // Tap-to-play with live stations needs delivery_module announces → cross-machine demo.

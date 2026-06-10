@@ -34,6 +34,7 @@ Item {
     property var stations: []
     property string playingName: ""
     property bool discoveryStarted: false
+    property int volume: 75
 
     Timer {  // poll the live directory while the Listen tab is open
         interval: 2000; repeat: true
@@ -209,16 +210,30 @@ Item {
                             }
                         }
                     }
-                    Label {
+                    // #14 empty / transitional state
+                    ColumnLayout {
                         visible: root.stations.length === 0
-                        text: "No live stations yet…"; opacity: 0.6
-                        Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+                        Layout.fillWidth: true; spacing: 8
+                        BusyIndicator {
+                            running: root.discoveryStarted
+                            Layout.alignment: Qt.AlignHCenter
+                            implicitWidth: 28; implicitHeight: 28
+                        }
+                        Label {
+                            text: root.discoveryStarted ? "Listening for stations…" : "Open to discover stations"
+                            opacity: 0.6; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+                        }
                     }
 
-                    RowLayout {  // now-playing
+                    RowLayout {  // #13 now-playing: name, volume, stop (no pause for live)
                         visible: root.playingName.length > 0
-                        Layout.fillWidth: true
+                        Layout.fillWidth: true; spacing: 8
                         Label { text: "▶ " + root.playingName; Layout.fillWidth: true; elide: Text.ElideRight }
+                        Slider {
+                            from: 0; to: 100; value: root.volume
+                            Layout.preferredWidth: 100
+                            onMoved: { root.volume = Math.round(value); root.callParse("setVolume", [root.volume]) }
+                        }
                         Button { text: "Stop"; onClicked: { root.callParse("stop", []); root.playingName = "" } }
                     }
 

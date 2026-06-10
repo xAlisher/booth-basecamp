@@ -151,12 +151,16 @@ join the directory view; de-dupe across topics.
 
 ### Epic G — Player controls + polish  (P1)
 
-**#13 — Player controls.** pause/resume (`SIGSTOP`/`SIGCONT`), stop, volume, now-playing bar.
-- **Headless test:** play→pause→resume→stop sequence asserts each `getPlayerStatus()` state.
+**#13 — Player controls.** ✅ **DONE (2026-06-10).** **No pause** — for *live* radio, pausing is just
+stop (the live edge moves on and MediaMTX rotates the HLS segments away). Controls are **Play / Stop /
+Volume**. `setVolume(pct)` clamps 0–100 and restarts `ffplay -volume` (it has no runtime volume IPC);
+now-playing bar has a volume slider + Stop.
+- **Proof:** direct-test ALL PASS — setVolume reports 40 + still playing after the change, stop → stopped.
 
-**#14 — Stream/Listen empty + transitional states.** "No live stations yet", "Waiting for OBS…",
-connecting spinners.
-- **Headless UI test:** assert empty-state copy with no stations / no stream.
+**#14 — Stream/Listen empty + transitional states.** ✅ **DONE (2026-06-10).** Listen empty state shows
+a `BusyIndicator` + "Open to discover stations" / "Listening for stations…"; Stream uses the #8 status
+light ("Waiting for OBS…").
+- **Proof:** integration-test passes — both empty-state strings instantiate.
 
 ### Epic H — Hardening & ship  (P2)
 
