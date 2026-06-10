@@ -29,6 +29,7 @@ Item {
     property string streamPrivacy: "public"   // public | onion (this host's broadcast)
     property string onionAddr:    ""          // our .onion once published (onion mode)
     property bool   onionReady:   false        // hidden-service descriptor published → reachable
+    property string onionError:   ""           // non-empty → Tor setup failed/timed out
     property var    stations:     []
     property string playingName:  ""
     property bool   discoveryStarted: false
@@ -85,7 +86,7 @@ Item {
     }
     function stopStream() {
         call("stopStream", []); root.streamCard = null; root.streamState = "idle"
-        root.streamPrivacy = "public"; root.onionAddr = ""; root.onionReady = false
+        root.streamPrivacy = "public"; root.onionAddr = ""; root.onionReady = false; root.onionError = ""
     }
     function playStation(s) {
         var r = root.call("play", [s.streamUrl, s.name || ""])
@@ -132,7 +133,8 @@ Item {
             if (r && r.state) { root.streamState = r.state
                 if (r.privacy) root.streamPrivacy = r.privacy
                 if (r.onion !== undefined) root.onionAddr = r.onion
-                if (r.onionReady !== undefined) root.onionReady = r.onionReady } }
+                if (r.onionReady !== undefined) root.onionReady = r.onionReady
+                root.onionError = r.onionError || "" } }
     }
     Timer {  // live directory while on the Listen tab (#9)
         interval: 2000; repeat: true; running: tabs.currentIndex === 1
@@ -336,8 +338,10 @@ Item {
                             Label { text: "🧅"; font.pixelSize: 13 }
                             Label {
                                 Layout.fillWidth: true; elide: Text.ElideMiddle; font.pixelSize: 12
-                                color: root.onionReady ? root.successGreen : root.warningYellow
-                                text: root.onionReady ? ("Onion ready · " + root.onionAddr)
+                                color: root.onionError.length > 0 ? root.errorRed
+                                     : root.onionReady ? root.successGreen : root.warningYellow
+                                text: root.onionError.length > 0 ? "Tor publish timed out — Stop and start again"
+                                     : root.onionReady ? ("Onion ready · " + root.onionAddr)
                                      : (root.onionAddr.length > 0 ? "Publishing Tor descriptor…" : "Starting Tor…")
                             }
                             DarkButton {

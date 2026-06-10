@@ -145,6 +145,7 @@ private:
     QString   m_torHostDir;       // host tor DataDirectory + HiddenServiceDir root (temp)
     QString   m_torListenDir;     // listener tor DataDirectory (temp)
     bool      m_onionReady = false;  // descriptor published → reachable by listeners
+    QString   m_onionError;          // non-empty → onion setup failed/timed out (surfaced to the UI)
     int       m_onionPollTicks = 0;  // bounded descriptor-publish poll (Senty ISSUE-3)
     QTimer    m_onionPublishPoll;    // polls tor.log for the descriptor upload
 };

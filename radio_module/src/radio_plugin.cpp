@@ -215,15 +215,20 @@ QString RadioModulePlugin::startStream(const QString& configJson)
 
     const QString configPath = writeMediaMtxConfig();
     if (configPath.isEmpty()) return err("config_write_failed");
+    // On any failure past here, scrub the runtime dir — mediamtx.yml holds the secret publish
+    // password and must not linger on disk after a failed start (Senty round-4 MEDIUM).
+    auto abort = [&](const QString& code) { killMediaMtx();
+        if (!m_runtimeDir.isEmpty()) QDir(m_runtimeDir).removeRecursively();
+        return err(code); };
     const QString spawnErr = spawnMediaMtx(configPath);
-    if (!spawnErr.isEmpty()) return err(spawnErr);
+    if (!spawnErr.isEmpty()) return abort(spawnErr);
 
     // Onion mode: bring up a tor hidden service for the HLS port. The .onion + readiness arrive
     // asynchronously (descriptor publish ~30-60s); announceOnce gates on it so no IP is ever sent.
     if (m_privacy == "onion") {
         m_onion.clear(); m_onionReady = false;
         const QString te = ensureTorHost();
-        if (!te.isEmpty()) { killMediaMtx(); return err(te); }
+        if (!te.isEmpty()) return abort(te);
     }
 
     // Onion mode: OBS is local to MediaMTX, so the ingest card uses loopback — never expose lanIp()
@@ -261,7 +266,7 @@ QString RadioModulePlugin::stopStream()
     emit eventResponse("streamStopped", QVariantList() << m_path);
     m_path.clear(); m_streamKey.clear(); m_streamName.clear(); m_lastStreamState.clear();
     m_announceTopic.clear(); m_startedAt = 0; m_announceSeq = 0;
-    m_privacy = QStringLiteral("public"); m_onion.clear(); m_onionReady = false;
+    m_privacy = QStringLiteral("public"); m_onion.clear(); m_onionReady = false; m_onionError.clear();
     return ok();
 }
 
@@ -315,6 +320,7 @@ QString RadioModulePlugin::getStreamStatus()
             // Never surface lanIp() in onion mode — advertise the .onion (once known) or nothing.
             r["onion"] = m_onion;              // "" until the hostname appears
             r["onionReady"] = m_onionReady;    // false until the descriptor is published
+            if (!m_onionError.isEmpty()) r["onionError"] = m_onionError;  // e.g. publish_timeout → UI
             if (!m_onion.isEmpty())
                 r["hlsUrl"] = QStringLiteral("http://%1/%2/index.m3u8").arg(m_onion, m_path);
         } else {
@@ -529,6 +535,8 @@ QString RadioModulePlugin::startFfplay()
     if (isOnionUrl(m_playingUrl)) {
         const QString te = ensureTorListen();
         if (!te.isEmpty()) return te;
+    } else {
+        killTorListen();  // switching to a clearnet stream — don't leave the listener tor running
     }
     const QPair<QString, QStringList> cmd = buildPlayerCommand(m_playingUrl);
     m_player = new QProcess(this);
@@ -629,7 +637,7 @@ QString RadioModulePlugin::ensureTorHost()
       << "HiddenServicePort 80 127.0.0.1:" << port("RADIO_HLS_PORT", 8888) << "\n";
     QString err;
     if (!startTorProc(m_torHost, m_torHostDir, cfg, err)) { m_torHostDir.clear(); return err; }
-    m_onion.clear(); m_onionReady = false; m_onionPollTicks = 0;
+    m_onion.clear(); m_onionReady = false; m_onionError.clear(); m_onionPollTicks = 0;
     m_onionPublishPoll.start(2000);
     return QString();
 }
@@ -656,6 +664,7 @@ void RadioModulePlugin::pollOnionStatus()
     if (++m_onionPollTicks > 45) {
         m_onionPublishPoll.stop();
         if (!m_onionReady) {
+            m_onionError = QStringLiteral("publish_timeout");  // surfaced via getStreamStatus → UI
             qWarning() << "RadioModulePlugin: onion descriptor publish timed out";
             emit eventResponse("onionError", QVariantList() << QStringLiteral("publish_timeout"));
         }

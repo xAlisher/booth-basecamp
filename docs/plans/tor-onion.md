@@ -1,9 +1,10 @@
 # Epic: Tor onion-service mode — hide the streamer's IP
 
-**Goal:** an optional **Onion** privacy mode where the host publishes a `.onion` stream URL (no IP in
-the announce) and listeners play it over Tor. Hides **both** the host's and listeners' IPs. Audio-first
-(low bitrate) fits Tor's bandwidth; default stays **Public** (today's LAN/direct behaviour). Closes the
-gap documented in [`docs/BRIEF.md` §Privacy](../BRIEF.md) and the README Privacy section.
+**Goal:** publish a `.onion` stream URL (no IP in the announce) so listeners play it over Tor —
+hiding **both** the host's and listeners' IPs **and** traversing NAT with no port-forwarding. Audio-first
+(low bitrate) fits Tor's bandwidth. **Onion is the DEFAULT** (internet radio shouldn't be LAN-only or
+leak the host IP); **Direct (LAN)** is the opt-in for local/low-latency use, labelled as IP-exposing.
+Closes the gap in [`docs/BRIEF.md` §Privacy](../BRIEF.md) and the README Privacy section.
 
 ## Why Tor (vs Tailscale / Cloudflare)
 Smallest change for this module: discovery is already *a URL on Waku*, so onion mode is mostly a **URL
@@ -21,12 +22,15 @@ Host (onion mode)                         Tor network                 Listener
  |<==== ffplay pulls HLS via torsocks → Tor SOCKS :9050 → rendezvous =====>| plays
 ```
 
-- **One `tor` daemon per radio_module** serves both roles: `SocksPort 9050` (for *listening* over Tor)
-  and, while streaming in onion mode, a `HiddenServiceDir` mapping `80 → 127.0.0.1:<HLS port>`.
-- Host reads `<hsdir>/hostname` → the `.onion`; `buildAnnouncePayload` uses it **instead of** `lanIp()`.
-- Listener: `startFfplay` detects a `.onion` host → wraps `ffplay` with `torsocks` so its TCP routes
-  through the local Tor SOCKS. The `play()` http/https allow-list is unchanged (`.onion` is http).
-- `startStream` config gains `"privacy": "public" | "onion"` (default `public`).
+- **Two independent `tor` processes** (Senty ISSUE-2) so host + listener lifecycles can't tear each
+  other down: a **host tor** (`SocksPort 0` + `HiddenServiceDir` mapping `80 → 127.0.0.1:<HLS port>`)
+  and a **listener tor** (`SocksPort`, for playing a `.onion`). `torsocks` is locked onto the listener
+  tor's SOCKS port via `TORSOCKS_TOR_PORT`.
+- Host reads `<hsdir>/hostname` → the `.onion`; `buildAnnouncePayload` uses it **instead of** `lanIp()`,
+  and never falls back to `lanIp()` in onion mode. Announce is gated on descriptor publish.
+- Listener: `startFfplay` detects a `.onion` host (canonical `isOnionUrl`) → wraps `ffplay` with
+  `torsocks`. The `play()` http/https allow-list is unchanged (`.onion` is http).
+- `startStream` config takes `"privacy": "onion" | "public"`, **default `onion`**.
 
 ## Issues
 
