@@ -18,11 +18,15 @@ to the module's built-in origin (MediaMTX)**. You point OBS at the URL the modul
 
    | Field | Example | Use |
    |-------|---------|-----|
-   | **WHIP URL** | `http://192.168.1.50:8889/ab12…/whip` | Preferred — OBS 30+ WebRTC output, sub-second |
-   | **RTMP Server** + **Stream Key** | `rtmp://192.168.1.50:1935` + `ab12…` | Broadest compatibility, ~2–5 s |
-   | **SRT URL** | `srt://192.168.1.50:8890?streamid=publish:ab12…` | Lossy / rural uplinks |
+   | **WHIP URL** | `http://192.168.1.50:8889/ab12…/whip?user=publisher&pass=…` | Preferred — OBS 30+ WebRTC output, sub-second |
+   | **RTMP Server** + **Stream Key** | `rtmp://192.168.1.50:1935` + `ab12…?user=publisher&pass=…` | Broadest compatibility, ~2–5 s |
+   | **SRT URL** | `srt://192.168.1.50:8890?streamid=publish:ab12…:publisher:…` | Lossy / rural uplinks |
 
    Use the **Copy** buttons — don't retype these.
+
+   > 🔒 **The `pass=…` part is a secret publish key.** Anyone who has it can broadcast as you.
+   > It is **never** included in what listeners receive (their HLS link is `…/ab12…/index.m3u8`,
+   > with no key). Don't paste the OBS values into a public channel; share only the topic if needed.
 
 The status light shows **Waiting for OBS…** until OBS connects.
 
@@ -34,8 +38,8 @@ The status light shows **Waiting for OBS…** until OBS connects.
 
 1. OBS → **Settings → Stream**.
 2. **Service:** `WHIP`.
-3. **Server:** paste the **WHIP URL** from the card.
-4. **Bearer Token:** leave blank (v1 has no publish auth).
+3. **Server:** paste the **WHIP URL** from the card (it already contains the publish key in the query).
+4. **Bearer Token:** leave blank (auth travels in the URL).
 5. **OK** → **Start Streaming**.
 
 Sub-second glass-to-origin. Best choice if your OBS is version 30 or newer.

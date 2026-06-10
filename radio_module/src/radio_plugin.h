@@ -88,7 +88,8 @@ private:
 
     QProcess* m_mediamtx = nullptr;
     QString   m_streamName, m_visibility, m_description;
-    QString   m_path;        // random MediaMTX path = OBS stream key (v1; real publish auth → #18)
+    QString   m_path;        // public stream id (in HLS URL + announce) — NOT a secret
+    QString   m_streamKey;   // #18 secret publish credential (MediaMTX auth); never announced
     QString   m_runtimeDir;  // per-stream temp dir holding mediamtx.yml
     QString   m_lastStreamState;  // for streamStatusChanged edge detection (#4)
     // Host announce (#6) + heartbeat (#10)

@@ -175,8 +175,19 @@ routed through it: start/play/addTopic/startDiscovery.
 **#16 — LGX packaging + install.** `nix bundle ... #dual`, `lgpm` install recipe; relaunch script.
   Reuse: `builder-lgx-install-recipe`, `lgx-package-format`.
 **#17 — README + user docs** (mirror beacon/stash README shape).
-**#18 — Security pass.** Stream-key entropy, topic-string injection, subprocess arg quoting,
-  no secrets in announce payloads. Reuse: `basecamp-security-patterns`, `~/basecamp/CODEX.md`.
+**#18 — Security pass.** ✅ **DONE (2026-06-10, runtime-proven).** Fixes:
+  - **Stream-hijack (headline):** the public `path` and the **secret 128-bit publish key are now
+    separate**. MediaMTX `authInternalUsers` makes HLS read public, **publish require the key**, and the
+    API localhost-only (auth-config spike-verified). OBS URLs carry `?user=publisher&pass=<key>`; the
+    **announce exposes only the public path** (no secret). Listeners can't republish/hijack.
+  - **Player URL allowlist:** `play()` only opens `http`/`https` — a malicious announce can't make
+    `ffplay` read `file:`/`pipe:`/`concat:`/a device.
+  - **Topic-injection:** `addTopic()` validates `^/[A-Za-z0-9._/-]{1,128}$` before subscribe.
+  - **No shell injection:** every subprocess (`mediamtx`/`ffplay`/`ffprobe`) is launched with a
+    `QStringList` arg vector — no shell, no quoting bugs.
+  - **Entropy:** path 64-bit, publish key 128-bit, `QRandomGenerator::system()`.
+- **Proof:** direct-test ALL PASS (20) — auth'd push goes live, announce carries no secret, `play`
+  rejects `/etc/passwd` + `file://`, `addTopic` rejects a malformed topic. OBS guide updated.
 
 ---
 
@@ -228,6 +239,8 @@ scorched-earth P2P notes: distinct `SCORCHED_TCP_PORT`-style node separation if 
 | play (ffplay) → playing, stop → stopped | ✅ (#9 2026-06-10, direct-test) | | | |
 | Listen-tab UI elements instantiate | ✅ (#9 2026-06-10, integration-test) | | | |
 | error UX: failed Start surfaces a visible banner | ✅ (#15 2026-06-10, integration-test drives real failure) | | | |
+| publish auth: keyed RTMP push goes live; announce leaks no secret | ✅ (#18 2026-06-10, direct-test + auth spike) | | | |
+| player rejects non-http URLs; addTopic rejects bad topics | ✅ (#18 2026-06-10, direct-test) | | | |
 | delivery_module wiring (createNode/subscribe/onEvent) | | | ✅ (#5 builds + module loads) | |
 | live delivery_module send/receive round-trip | | | | ⚠️ needs AppImage (2 nodes; logoscore gates returns) |
 | radio_module loads + dispatches ping (logoscore, isolated dir) | ✅ (#1 2026-06-10: registry connect + "Method call successful", same as canonical capability_module) | | | |

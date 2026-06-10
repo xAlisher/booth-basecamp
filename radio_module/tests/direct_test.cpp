@@ -54,11 +54,13 @@ int main(int argc, char** argv) {
     ok(state() == "waiting", "status 'waiting' with no publisher");
 
     int rtmp = qEnvironmentVariableIntValue("RADIO_RTMP_PORT"); if (!rtmp) rtmp = 1935;
+    // #18: publishing now requires the secret key (card.streamKey = "<path>?user=publisher&pass=…").
+    const QString streamKey = card.value("streamKey").toString();
     QProcess push;
     push.start("ffmpeg", {"-hide_banner","-loglevel","error","-re",
         "-f","lavfi","-i","testsrc=size=320x240:rate=15","-f","lavfi","-i","sine=frequency=1000",
         "-c:v","libx264","-preset","ultrafast","-tune","zerolatency","-b:v","300k","-c:a","aac",
-        "-f","flv", QString("rtmp://127.0.0.1:%1/%2").arg(rtmp).arg(path1)});
+        "-f","flv", QString("rtmp://127.0.0.1:%1/%2").arg(rtmp).arg(streamKey)});
     push.waitForStarted(3000);
     QString st; for (int i = 0; i < 12 && st != "live"; ++i) { QThread::msleep(1000); st = state(); }
     ok(st == "live" || st == "receiving", (QString("status '")+st+"' while publishing").toUtf8());
@@ -73,6 +75,9 @@ int main(int argc, char** argv) {
         // no delivery_module in-process → can't actually send, but the GATE passed (state live)
         ok(ann.value("reason").toString() == "no_delivery" && schema,
            "announce gate passes when live + payload has full schema");
+        // #18: the announce must NOT leak the publish secret.
+        const QString plStr = QString::fromUtf8(QJsonDocument(pl).toJson(QJsonDocument::Compact));
+        ok(!plStr.contains("pass=") && !plStr.contains("publisher"), "announce carries no publish secret");
     }
 
     // --- #10 heartbeat: while live, the timer re-fires announceOnce (RADIO_HEARTBEAT_MS set small) ---
@@ -81,6 +86,22 @@ int main(int argc, char** argv) {
         const int before = p.announceAttemptCount();
         spin(1200);
         ok(p.announceAttemptCount() - before >= 3, "heartbeat re-announces while live");
+    }
+
+    // --- #9 playback over the LIVE HLS (http only; the player rejects other schemes) ---
+    {
+        int hlsP = qEnvironmentVariableIntValue("RADIO_HLS_PORT"); if (!hlsP) hlsP = 8888;
+        const QString hlsUrl = QString("http://127.0.0.1:%1/%2/index.m3u8").arg(hlsP).arg(path1);
+        auto pstate = [&]{ return QJsonDocument::fromJson(p.getPlayerStatus().toUtf8())
+                               .object().value("state").toString(); };
+        p.play(hlsUrl, "Live FM");
+        QThread::msleep(2500);
+        ok(pstate() == "playing", "play HLS: ffplay running");
+        const int vol = QJsonDocument::fromJson(p.setVolume(40).toUtf8()).object().value("volume").toInt();
+        ok(vol == 40, "setVolume: clamps + reports volume");
+        p.stop();
+        QThread::msleep(400);
+        ok(pstate() == "stopped", "stop: player stopped");
     }
     push.kill(); push.waitForFinished(2000);
 
@@ -122,26 +143,13 @@ int main(int argc, char** argv) {
         qunsetenv("RADIO_TTL_MS");
     }
 
-    // --- #9 playback: play a generated tone via ffplay → playing; stop → stopped ---
-    {
-        QProcess gen;
-        gen.start("ffmpeg", {"-y","-f","lavfi","-i","sine=frequency=440:duration=30",
-                             "-loglevel","error","/tmp/radio_test_tone.wav"});
-        gen.waitForFinished(10000);
-        p.play("/tmp/radio_test_tone.wav", "Tone FM");
-        QThread::msleep(900);
-        auto pstate = [&]{ return QJsonDocument::fromJson(p.getPlayerStatus().toUtf8())
-                               .object().value("state").toString(); };
-        ok(pstate() == "playing", "play: ffplay running");
-        // #13 controls (live = Play/Stop/Volume; no pause): setVolume reflected, stop → stopped
-        const int vol = QJsonDocument::fromJson(p.setVolume(40).toUtf8()).object().value("volume").toInt();
-        ok(vol == 40, "setVolume: clamps + reports volume");
-        QThread::msleep(300);
-        ok(pstate() == "playing", "still playing after volume change");
-        p.stop();
-        QThread::msleep(400);
-        ok(pstate() == "stopped", "stop: player stopped");
-    }
+    // --- #18 security: player allowlist + topic validation (inputs are attacker-controlled) ---
+    ok(QJsonDocument::fromJson(p.play("/etc/passwd", "x").toUtf8()).object().value("error").toString() == "unsafe_url",
+       "play rejects a non-http path");
+    ok(QJsonDocument::fromJson(p.play("file:///etc/passwd", "x").toUtf8()).object().value("error").toString() == "unsafe_url",
+       "play rejects file:// url");
+    ok(QJsonDocument::fromJson(p.addTopic("not a topic!").toUtf8()).object().value("error").toString() == "invalid_topic",
+       "addTopic rejects a malformed topic");
 
     printf("=== %s ===\n", fails ? "FAILURES" : "ALL PASS");
     return fails ? 1 : 0;

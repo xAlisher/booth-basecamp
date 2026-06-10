@@ -15,6 +15,8 @@
 #include <QTcpSocket>
 #include <QJsonArray>
 #include <QSysInfo>
+#include <QUrl>
+#include <QRegularExpression>
 
 // Uniform JSON return shape so the QML bridge is stable. Implemented per-issue
 // (see docs/plans/radio-implementation.md); remaining methods are stubs.
@@ -95,7 +97,8 @@ QString RadioModulePlugin::writeMediaMtxConfig() const
         return QString();
 
     // `paths: all_others` is REQUIRED — an empty config rejects arbitrary paths (#2 spike).
-    // v1 has no publish auth: the unguessable random path is the access control (real auth → #18).
+    // #18 auth: HLS read is public; publishing requires the secret key; the local API is
+    // localhost-only (verified 2026-06-10). This stops anyone on the topic hijacking the stream.
     QTextStream s(&cfg);
     s << "rtmpAddress: :"   << port("RADIO_RTMP_PORT", 1935) << "\n"
       << "hlsAddress: :"    << port("RADIO_HLS_PORT",  8888) << "\n"
@@ -108,6 +111,18 @@ QString RadioModulePlugin::writeMediaMtxConfig() const
       << "webrtc: yes\n"   // WHIP ingest endpoint (OBS 30+)
       << "srt: yes\n"
       << "rtsp: no\n"
+      << "authInternalUsers:\n"
+      << "- user: any\n"
+      << "  permissions:\n"
+      << "  - action: read\n"          // public HLS playback for listeners
+      << "- user: any\n"
+      << "  ips: ['127.0.0.1', '::1']\n"
+      << "  permissions:\n"
+      << "  - action: api\n"           // local status polling only
+      << "- user: publisher\n"
+      << "  pass: " << m_streamKey << "\n"
+      << "  permissions:\n"
+      << "  - action: publish\n"       // OBS must present the secret key
       << "paths:\n"
       << "  all_others:\n";
     return cfg.fileName();
@@ -155,7 +170,8 @@ QString RadioModulePlugin::startStream(const QString& configJson)
     m_visibility  = cfg.value("visibility").toString(QStringLiteral("public"));
     m_description = cfg.value("description").toString();
 
-    m_path       = randomHex(8);  // 16 hex chars — stream id + OBS stream key (v1)
+    m_path       = randomHex(8);   // 64-bit public stream id
+    m_streamKey  = randomHex(16);  // 128-bit secret publish credential (#18)
     m_runtimeDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
                    + "/radio_module/" + m_path;
     m_startedAt   = QDateTime::currentMSecsSinceEpoch();
@@ -174,15 +190,16 @@ QString RadioModulePlugin::startStream(const QString& configJson)
     const QString ip = lanIp();
     const int hls = port("RADIO_HLS_PORT", 8888), whip = port("RADIO_WHIP_PORT", 8889),
               rtmp = port("RADIO_RTMP_PORT", 1935), srt = port("RADIO_SRT_PORT", 8890);
+    const QString auth = QStringLiteral("user=publisher&pass=%1").arg(m_streamKey);
 
     QJsonObject card{
         {"ok", true},
         {"path", m_path},
-        {"streamKey", m_path},  // OBS RTMP "Stream Key" (== path in v1)
-        {"whipUrl", QStringLiteral("http://%1:%2/%3/whip").arg(ip).arg(whip).arg(m_path)},
+        {"streamKey", QStringLiteral("%1?%2").arg(m_path, auth)},  // OBS RTMP "Stream Key" (path + auth)
+        {"whipUrl", QStringLiteral("http://%1:%2/%3/whip?%4").arg(ip).arg(whip).arg(m_path).arg(auth)},
         {"rtmpUrl", QStringLiteral("rtmp://%1:%2").arg(ip).arg(rtmp)},  // OBS RTMP "Server"
-        {"srtUrl",  QStringLiteral("srt://%1:%2?streamid=publish:%3").arg(ip).arg(srt).arg(m_path)},
-        {"hlsUrl",  QStringLiteral("http://%1:%2/%3/index.m3u8").arg(ip).arg(hls).arg(m_path)},
+        {"srtUrl",  QStringLiteral("srt://%1:%2?streamid=publish:%3:publisher:%4").arg(ip).arg(srt).arg(m_path).arg(m_streamKey)},
+        {"hlsUrl",  QStringLiteral("http://%1:%2/%3/index.m3u8").arg(ip).arg(hls).arg(m_path)},  // public (read-only)
     };
     m_heartbeat.start(port("RADIO_HEARTBEAT_MS", 15000));  // #10 re-announce while live
     qDebug() << "RadioModulePlugin: stream started, path" << m_path;
@@ -198,7 +215,7 @@ QString RadioModulePlugin::stopStream()
     if (!m_runtimeDir.isEmpty()) QDir(m_runtimeDir).removeRecursively();
     qDebug() << "RadioModulePlugin: stream stopped";
     emit eventResponse("streamStopped", QVariantList() << m_path);
-    m_path.clear(); m_streamName.clear(); m_lastStreamState.clear();
+    m_path.clear(); m_streamKey.clear(); m_streamName.clear(); m_lastStreamState.clear();
     m_announceTopic.clear(); m_startedAt = 0; m_announceSeq = 0;
     return ok();
 }
@@ -314,6 +331,9 @@ QString RadioModulePlugin::startDiscovery()
 
 QString RadioModulePlugin::addTopic(const QString& topic)
 {
+    // #18: validate the user-supplied content topic first (before state/IPC).
+    static const QRegularExpression re(QStringLiteral("^/[A-Za-z0-9._/-]{1,128}$"));
+    if (!re.match(topic).hasMatch()) return err("invalid_topic");
     if (!m_discovering) return err("discovery_not_started");
     return subscribeTopic(topic) ? ok() : err("subscribe_failed");
 }
@@ -426,6 +446,10 @@ QString RadioModulePlugin::startFfplay()
 QString RadioModulePlugin::play(const QString& hlsUrl, const QString& stationName)
 {
     if (hlsUrl.isEmpty()) return err("no_url");
+    // #18: a station's streamUrl is attacker-controlled (anyone can announce). Only let ffplay
+    // open http/https — never file:, pipe:, concat:, a device, or other ffmpeg protocols.
+    const QString scheme = QUrl(hlsUrl).scheme().toLower();
+    if (scheme != "http" && scheme != "https") return err("unsafe_url");
     m_playingUrl = hlsUrl;
     m_playingStation = stationName;
     const QString e = startFfplay();
