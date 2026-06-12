@@ -157,7 +157,42 @@ lgpd repo add https://raw.githubusercontent.com/xAlisher/logos-basecamp-modules/
 lgpd install radio          # installs radio_module + radio_ui
 ```
 
-`radio_module` depends on `delivery_module` — install that too (it ships with the platform).
+### Installing `delivery_module` (required — it does **NOT** ship with the platform)
+
+`radio_module` depends on `delivery_module`, and **no Basecamp build or catalog bundles it** — you
+install it yourself. Pin it to **`v0.1.1`** (rev `0c346c0c`, metadata version `1.1.0`). Do **not** use
+`main` or another commit: `radio_module` is compiled against v0.1.1's IPC API, and a newer delivery
+drifts the `Q_INVOKABLE` signatures → `"Invalid response"` / load crashes. Pick one path:
+
+**A — prebuilt LGX (no Nix needed).** Grab
+[`dist/delivery_module-v0.1.1-linux-amd64.lgx`](dist/delivery_module-v0.1.1-linux-amd64.lgx) (also on
+[Releases](https://github.com/xAlisher/radio-basecamp/releases)) and install it:
+
+```bash
+MDIR="$HOME/.local/share/Logos/LogosBasecamp/modules"          # Linux profile path
+lgpm --modules-dir "$MDIR" --allow-unsigned install --file delivery_module-v0.1.1-linux-amd64.lgx
+```
+
+**B — build it from source (Nix).** Same artifact, built locally:
+
+```bash
+nix build "github:logos-co/logos-delivery-module/v0.1.1#lgx-portable"
+lgpm --modules-dir "$MDIR" --allow-unsigned install --file result/*.lgx
+```
+
+**C — no `lgpm`, no Nix (manual dev-install).** Extract the LGX and drop the linux variant in by hand:
+
+```bash
+mkdir -p "$MDIR/delivery_module" && tar xzf delivery_module-v0.1.1-linux-amd64.lgx -C /tmp/dm
+cp -r /tmp/dm/variants/linux-amd64/. "$MDIR/delivery_module/" && cp /tmp/dm/manifest.json "$MDIR/delivery_module/"
+printf linux-amd64 > "$MDIR/delivery_module/variant"
+```
+
+`radio_module` + `radio_ui` install the same way (from this repo's Releases / catalog — see above).
+
+> **⚠️ glibc / AppImage:** the `268` AppImage needs **glibc ≥ 2.38**. On older hosts (e.g. Ubuntu 22.04 /
+> glibc 2.35) run Basecamp inside a glibc-≥2.38 container — a **`distrobox` on Ubuntu 24.04** (glibc 2.39)
+> is confirmed working. This is an upstream platform build requirement, not a module issue.
 
 > **⚠️ Requirements before it works:**
 > 1. The [`pre-release-1dc1c08-268` Basecamp build](#compatibility) — newer builds crash at load
