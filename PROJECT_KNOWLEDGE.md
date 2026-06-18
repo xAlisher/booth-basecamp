@@ -30,8 +30,45 @@ exact throwing line (this is how we proved the crash was in `new LogosModules(ap
 wild keeps the 295 pre-release at `~/logos-basecamp-current.AppImage` (other agent uses it). To run
 radio on the working older build, use a **separate binary + isolated profile**:
 `XDG_DATA_HOME=~/.local/share/Logos-khidr <session-env> ~/logos-basecamp-khidr.AppImage`. The profile
-holds its own `modules/` + `plugins/` (rsynced from a known-good machine). Run only ONE instance at a
-time (shared ports). Modules must be portable-built (`$ORIGIN` rpath) to run cross-machine.
+holds its own `modules/` + `plugins/` (rsynced from a known-good machine). Modules must be
+portable-built (`$ORIGIN` rpath) to run cross-machine.
+
+It CAN run **alongside** an already-live Basecamp (e.g. a demo on a call you must not kill) — the only
+true cross-profile collision is delivery's fixed **TCP 60000**, so coexistence is safe iff the live
+instance does NOT use delivery (preflight `ss -tln | grep ':60000 '`). Add a separate `XDG_CACHE_HOME`
+so you never rewrite the live instance's qmlcache, and do NOT `pkill`/`fusermount` (each AppImage
+self-mounts at its own `/tmp/.mount_logos-XXXXXX`). Reusable launcher:
+`receiver-basecamp/scripts/launch-khidr.sh`. Platform skill: `basecamp-nondestructive-coexist-launch`
+(supersedes the "run only ONE instance" caution; `LOGOS_DATA_DIR` is suspect on current builds —
+`XDG_DATA_HOME` is what actually separates profiles).
+
+---
+
+## Source clients — pushing audio into the station (OBS alternatives)
+
+`buildCard()` (`radio_plugin.cpp:291`) mints the ingest endpoints from `m_path`/`m_streamKey`/ports;
+MediaMTX `authInternalUsers` requires `user=publisher&pass=<streamKey>` to publish (HLS read is public).
+Onion mode forces the ingest IP to loopback `127.0.0.1` (never `lanIp`). Endpoints (defaults):
+`rtmp://<ip>:1935/<path>?user=publisher&pass=<key>` · WHIP `http://<ip>:8889/<path>/whip?…` ·
+`srt://<ip>:8890?streamid=publish:<path>:publisher:<key>` · HLS out `http://<ip>:8888/<path>/index.m3u8`.
+
+**Liquidsoap is a clean headless source client (OBS is overkill for a demo).** A `.liq` pushing a
+watched playlist dir to the RTMP ingest as **AAC-in-FLV** (what MediaMTX expects) lights up the path —
+verified end-to-end (Soulseek download → liquidsoap → RTMP → MediaMTX → HLS/onion → receiver):
+
+```liquidsoap
+settings.server.telnet.set(true)            # control surface on :1234 (skip/queue/metadata)
+settings.server.telnet.port.set(1234)
+radio = mksafe(playlist(mode="randomize", reload_mode="watch", "/path/to/music"))
+output.url(url="rtmp://127.0.0.1:1935/<path>?user=publisher&pass=<key>",
+           %ffmpeg(format="flv", %audio(codec="aac", b="128k", samplerate=44100, channels=2)), radio)
+```
+
+Confirm the publish via the MediaMTX API: `curl -s localhost:9997/v3/paths/list` → `online:true` +
+`source.type:rtmpConn`. `mediamtx`/`liquidsoap` are nix system binaries (`nix profile install
+nixpkgs#…`); **mediamtx is NOT provisioned by the AppImage** (radio#21) → hosting fails with
+`mediamtx_not_found` until it's on PATH. Reusable script: `/tmp/station.liq`. `.liq` gotcha: don't wrap
+`getenv` in a `"#{…}"` string interpolation (`Undefined variable home` at `--check`) — assign directly.
 
 ---
 

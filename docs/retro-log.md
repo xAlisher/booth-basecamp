@@ -2,6 +2,37 @@
 
 Raw captures, reshuffled into PROJECT_KNOWLEDGE.md / skills at `/retro`.
 
+## Week of 2026-06-16 — khidr demo: coexisting launch + Liquidsoap broadcaster (no merge)
+
+### Wins
+- [project] **Liquidsoap replaced OBS as a headless source client, verified end-to-end.** Pulled the
+  ingest URL shape straight from `buildCard()` (`radio_plugin.cpp:291`) — RTMP `…/<path>?user=publisher&
+  pass=<key>`, AAC-in-FLV — wrote a `.liq` with a watched playlist dir + telnet control, and confirmed
+  the publish via the MediaMTX API (`paths/list` → `online:true`, `source.type:rtmpConn`). Full chain:
+  Soulseek download → liquidsoap → RTMP → MediaMTX → HLS/onion → receiver. → PROJECT_KNOWLEDGE "Source
+  clients".
+- [process] **Non-destructive coexisting launch — ran the 268 khidr demo alongside the live 295 instance
+  without killing it.** The existing `launch-radio-only.sh` opens with `pkill` + `fusermount` + qmlcache
+  wipe (would have killed the instance the user was demoing on a call). Instead: separate `XDG_DATA_HOME`
+  + `XDG_CACHE_HOME` + a `ss :60000` delivery-port preflight, no pkill. Both survived. → extracted
+  `basecamp-nondestructive-coexist-launch`.
+- [process] **investigate-then-file on the MediaMTX failure.** Short investigation (traced
+  `mediamtx_not_found` → `resolveBin` lookup order → confirmed the binary absent on PATH), filed radio#21
+  with 3 sized options, handed prioritization back, then did option A (install) only when directed.
+
+### Fails
+- [process] **Assumed "added to music" meant `~/Music`; scanned it twice and found nothing** before the
+  user clarified. The file had been Soulseek-downloaded to
+  `~/.local/share/.logos_host.elf/soulseek/music/Cypherwave`. Root cause: anchored on the obvious path
+  instead of a recency scan first — `find ~ -mmin -30 -iname '*.mp3'` located it in one shot. Rule: when
+  a user says they "added" a file and the obvious dir is empty, do a recency scan before re-asking.
+- [project] **`.liq` failed `--check` with `Undefined variable home`** — wrote `music_dir =
+  "#{getenv(default=…, "STATION_MUSIC_DIR")}"`. Root cause: nested a `#{…}` interpolation inside a quoted
+  string needlessly. Fix: assign `getenv`/the path directly, no interpolation wrapper.
+- [project] **MediaMTX isn't provisioned by the AppImage** — radio declares it in metadata
+  `nix.packages.runtime` but hosting dies `mediamtx_not_found`. Worked around for the demo (option A:
+  `nix profile install`); real fix (bundle in the lgx, option B) tracked in radio#21.
+
 ## Week of 2026-06-10 — Tor onion epic (merged 223c5ff)
 
 ### Wins
