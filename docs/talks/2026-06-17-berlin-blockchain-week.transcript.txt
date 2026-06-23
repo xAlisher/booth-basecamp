@@ -1,0 +1,114 @@
+Berlin Blockchain Week — radio/receiver lightning talk + demo
+Speaker: Alisher (single speaker; Q&A at the end)
+Source: IMG_4434.MOV (11:30, stereo phone capture)
+Transcribed: 2026-06-23 on Sneg RTX 3090 — faster-whisper large-v3 (cuda, int8), lang=en
+Method: single-speaker monologue → no diarization needed.
+
+⚠️ Auto-STT caveats (verify before quoting outbound — names/terms are NOT machine-accurate):
+  - "LiquidSwap" / "Chain"  → almost certainly **Liquidsoap** (open-source radio automation;
+    matches "used by major radio stations… weekly/monthly programming"). Confirmed: liquidsoap is
+    the source-client used in the radio pipeline.
+  - "IM receiver" / "red small IM receiver"  → **FM receiver**.
+  - "it's not really a pilot"  → **"it's not really private"** (context: IP is exposed).
+  - "Logos G-score"  → **logoscore** (the headless test/scan tool).
+  - Station names "reading the truth" / "the gyroscope" are garbled — the home-server station is the
+    **"Logos manifesto"** stream; the second station's real name is UNVERIFIED (likely the
+    "Living Within the Truth / Jarrad Hope" Cypherwave track per the radio halt notes).
+  - 06:30–09:50 is mostly the demo playing audio (the AI "Logos manifesto" song) with little speech;
+    short fragments there are best-reading.
+
+────────────────────────────────────────────────────────────────────────
+
+[00:00] I don't know that. I think that they work, it's by other people.
+[00:08] My name is Alisher. I like to build things, I like to create things.
+[00:23] For the last three months I'm obsessed with Basecamp.
+[00:30] And I want to tell you that I'm not a builder.
+[00:34] I don't write code, I don't open IDE and change stuff there.
+[00:40] Also I'm obsessed with AI.
+[00:43] Not only with cloud-based, but also local.
+[00:46] I run some models under my stairs.
+[00:52] And how it all started.
+[00:54] So a team published some proof of concept models.
+[00:59] And some repos on Github.
+[01:01] And I asked my agents to review them.
+[01:04] To reverse engineer everything.
+[01:06] To write documentations on every function.
+[01:09] To create skills for building Basecamp models.
+[01:13] This is how it started.
+[01:15] Team moves very fast. And team changes stuff. And commits appear like every second day.
+[01:21] And skills I used for the first models not work for new builds of Basecamp.
+[01:28] So I built a routine, like a pipeline. That updates the skills.
+[01:33] Based on new commits. Based on new issues. On everything I can find.
+[01:40] I wrote some scripts that go every morning. Over Logos. Also over logoscore [STT: "Logos G-score"].
+[01:47] And check if there's something interesting that we can use. That we can embed in our pipelines.
+[01:55] So I think this is the reason why I'm so fast in building models.
+[02:00] So basically to build anything it takes like hours. Not days.
+[02:04] Then maybe some more hours to debug. And one more hour to record the demo.
+[02:10] So I will tell you about one of the last things I've built.
+[02:14] And I'm also obsessed with music.
+[02:18] And I hate Spotify. And I hate all centralized music platforms.
+[02:23] Because of what they do for musicians. Because of how they gain information.
+[02:27] Because of what they pay. And how they use money they gain from musicians.
+[02:33] So from my childhood I really was into radios.
+[02:39] I had my FM receiver [STT: "IM"]. Like a red small FM receiver. And listened to different stuff.
+[02:44] And I had an idea to build a pirate station once in a while.
+[02:49] And when I started researching I found that hardware is very costly.
+[02:54] You can't really use radio waves to broadcast whatever you want.
+[02:58] Because you know air and magnetic field are owned by government. You can't use it to broadcast things.
+[03:06] And then what I had inside — maybe I can use logos tech and use like messaging and other stuff.
+[03:16] To build some kind of framework for pirate radio stations.
+[03:21] So I built one model called radio. It's here.
+[03:30] And this model allows me to broadcast. So what it do?
+[03:34] It creates this RTMP server. That can be used by any other app that can broadcast.
+[03:42] I used OBS recently. And now this morning I switched to Liquidsoap [STT: "LiquidSwap"].
+[03:47] And Liquidsoap is a cool thing. It's also open source.
+[03:49] And this app used by like major radio stations. To create a list with all kind of like weekly programming, monthly programming.
+[03:58] So it runs right now here on my machine.
+[04:02] And then I have content. And content goes here in Basecamp.
+[04:09] And I need to tell the world that I'm broadcasting something.
+[04:13] And for this stuff I use logos messaging.
+[04:16] So there is a topic dedicated to this model.
+[04:20] And this model announce stream into logos messaging topic.
+[04:26] So everyone who have this model can listen this topic. And see radio stations.
+[04:36] Then when I made the first iteration of this. I had a problem.
+[04:42] That everyone can see IP of the streamer. And it's not really private [STT: "a pilot"].
+[04:50] So if you stream something that people in power don't really like.
+[04:56] Then they can knock your door and get you jailed.
+[05:00] So I started thinking how I can hide IP of the streamer.
+[05:04] And obvious solution was Onion. And Tor.
+[05:10] So this thing use Tor to hide IP.
+[05:16] So this is radio. And if I go to listen. I can see this one.
+[05:23] This is logos manifesto. Radio that runs headlessly on my home server. And just translates logos manifesto.
+[05:32] But then this model felt a bit heavy. Because sometimes you just want to listen. You don't want to stream.
+[05:42] And I decided to build more lightweight model. That do only listening. I call it receiver.
+[05:51] So this is receiver. And it sees two radio stations right now.
+[05:56] This one logos manifesto as I said go from my server.
+[06:00] And this is [station name UNVERIFIED — STT: "reading the truth / the gyroscope"]. Goes right from here.
+[06:05] Listen logos manifesto first.
+[06:10] Also I have cache settings. Because depends on internet connection.
+[06:14] Sometimes you need to cache a bit of stream. To make it like more smooth without interruptions.
+[06:22] Right now I think in 20 seconds something. We should start listening logos manifesto.
+[06:31] It's like a song. Made by some AI. I think it's what we use Suno.
+
+[06:38–08:24] — (demo: waiting on the 20s cache / Tor connection; little speech. Fragments:
+   "the same port", "in like real case scenario you will not have port models installed",
+   "I will just unplug it", "it starts fetching this topic", "Discovery is online", "20 seconds of caching")
+
+[08:30] (the "Logos manifesto" AI song plays:)
+   "…On top of this infrastructure we are establishing a parallel society. Designed for plurality,
+    and hard-coded to respect… governed by a common law, court system, and a culture of virtues —
+    wisdom, courage, humanity, justice, temperance, and transcendence. Logos is the next step forward
+    in the evolution of…"
+[09:00] Cool.
+
+[09:53] …old machine that you don't use, and you have something to share with the world.
+[09:58] Maybe it's music that was banned from Spotify, maybe it's like your own podcast that does not
+[10:07] fit some centralized agenda, or like experimental music from your friends, or jam sessions you
+[10:14] recorded with your phone in some basement.
+[10:20] Please install this, put it on playlists, put it on loop, and let others listen.
+[10:28] Thank you.
+
+— Q&A —
+[10:33] Yes, questions?
+[10:35] Q: To transmit this audio — what do you use? Your mixer? Or what is this?
+[10:43] A: Yeah, so Liquidsoap [STT: "Chain"] is a local app that have content. Then [RTMP] server inside the Basecamp…
