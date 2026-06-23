@@ -35,6 +35,7 @@ Item {
     property string playingName:  ""
     property bool   discoveryStarted: false
     property int    volume:       75
+    property bool   settingsOpen: false        // #19 cogwheel settings pane
     property string deliveryState: "offline"   // offline | ready | connected
     property string deliveryPeerId: ""
 
@@ -294,6 +295,47 @@ Item {
                 StatusPill { visible: root.streamCard !== null && root.streamPrivacy === "onion"
                              dot: root.onionDotColor(); label: root.onionLabel() }
             }
+            // cogwheel — opens the settings pane (#19)
+            Rectangle {
+                Layout.alignment: Qt.AlignVCenter
+                implicitWidth: 28; implicitHeight: 28; radius: 6
+                color: gearArea.containsMouse ? root.bgSecondary : "transparent"
+                border.color: root.settingsOpen ? root.accentOrange : root.borderColor; border.width: 1
+                Text { anchors.centerIn: parent; text: "⚙"; font.pixelSize: 15
+                       color: root.settingsOpen ? root.accentOrange : root.textSecondary }
+                MouseArea { id: gearArea; anchors.fill: parent; hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.settingsOpen = !root.settingsOpen }
+            }
+        }
+
+        // ── Settings pane (cogwheel, #19) — listener buffer lives here now ────
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.leftMargin: 16; Layout.rightMargin: 16; Layout.topMargin: 6
+            visible: root.settingsOpen
+            implicitHeight: setCol.implicitHeight + 20
+            color: root.bgSecondary; radius: 6; border.color: root.borderColor; border.width: 1
+            ColumnLayout {
+                id: setCol
+                anchors { top: parent.top; left: parent.left; right: parent.right; margins: 10 }
+                spacing: 6
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { text: "Listener buffer"; color: root.textSecondary; font.pixelSize: 11 }
+                    Item { Layout.fillWidth: true }
+                    Label { text: root.listenBuffer + "s"; color: root.textPrimary; font.pixelSize: 11 }
+                }
+                Slider {
+                    id: bufSlider; from: 2; to: 60; stepSize: 1; value: root.listenBuffer
+                    Layout.fillWidth: true
+                    onMoved: { root.listenBuffer = Math.round(value); root.call("setListenBuffer", [root.listenBuffer]) }
+                }
+                Label {
+                    text: "Seconds behind live — rides out Tor latency so audio doesn't chop."
+                    color: root.textMuted; font.pixelSize: 10; Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+            }
         }
 
         // No error banner — all errors go to the activity log (#12).
@@ -475,16 +517,6 @@ Item {
                         Slider { from: 0; to: 100; value: root.volume; Layout.preferredWidth: 100
                             onMoved: { root.volume = Math.round(value); root.call("setVolume", [root.volume]) } }
                         DarkButton { text: "Stop"; onClicked: { root.call("stop", []); root.playingName = "" } }
-                    }
-                    RowLayout {  // listener jitter buffer (#17) — deeper rides out Tor latency spikes
-                        Layout.fillWidth: true; spacing: 8
-                        Label { text: "Buffer"; color: root.textSecondary; font.pixelSize: 12; Layout.preferredWidth: 48 }
-                        Slider {
-                            id: bufSlider; from: 2; to: 60; stepSize: 1; value: root.listenBuffer
-                            Layout.fillWidth: true
-                            onMoved: { root.listenBuffer = Math.round(value); root.call("setListenBuffer", [root.listenBuffer]) }
-                        }
-                        Label { text: root.listenBuffer + "s"; color: root.textPrimary; font.pixelSize: 12; Layout.preferredWidth: 30 }
                     }
                     RowLayout {  // + add private topic
                         Layout.fillWidth: true; spacing: 8
