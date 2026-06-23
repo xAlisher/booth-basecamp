@@ -164,10 +164,10 @@ QString RadioModulePlugin::writeMediaMtxConfig() const
       << "apiAddress: :"    << port("RADIO_API_PORT",  9997) << "\n"
       << "api: yes\n"
       << "hls: yes\n"
-      // #17 mpegts (not lowLatency) so listeners fetch whole segments and can buffer over high-RTT
-      // Tor; a deep playlist (24 × 1s) lets the listener start up to ~20s behind live to absorb jitter.
+      // #17/#22 mpegts (not lowLatency) so listeners fetch whole segments and can buffer over high-RTT
+      // Tor; a deep playlist (70 × 1s) lets the listener start up to ~60s behind live to absorb jitter.
       << "hlsVariant: mpegts\n"
-      << "hlsSegmentCount: 24\n"
+      << "hlsSegmentCount: 70\n"
       << "hlsSegmentDuration: 1s\n"
       << "webrtc: yes\n"   // WHIP ingest endpoint (OBS 30+)
       << "srt: yes\n"
@@ -969,7 +969,7 @@ QString RadioModulePlugin::setVolume(int percent)  // #13 — ffplay has no runt
 
 QString RadioModulePlugin::setListenBuffer(int seconds)  // #17 — deeper buffer rides out Tor jitter
 {
-    m_listenBufferSec = qBound(0, seconds, 20);  // capped by the host playlist depth (24 × 1s)
+    m_listenBufferSec = qBound(0, seconds, 60);  // #22 capped by the host playlist depth (70 × 1s)
     if (m_player && m_player->state() != QProcess::NotRunning && !m_playingUrl.isEmpty())
         startFfplay();  // re-apply live; brief re-buffer gap
     return QString::fromUtf8(QJsonDocument(QJsonObject{{"ok", true}, {"bufferSec", m_listenBufferSec}})
