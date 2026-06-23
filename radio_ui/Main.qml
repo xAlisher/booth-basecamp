@@ -33,6 +33,8 @@ Item {
     property string onionError:   ""           // non-empty → Tor setup failed/timed out
     property var    stations:     []
     property string playingName:  ""
+    property string playPhase:    "idle"      // #23 caching-on-play: idle | caching | playing
+    property int    cacheLeft:    0
     property bool   discoveryStarted: false
     property int    volume:       75
     property bool   settingsOpen: false        // #19 cogwheel settings pane
@@ -103,7 +105,22 @@ Item {
     }
     function playStation(s) {
         var r = root.call("play", [s.streamUrl, s.name || ""])
-        if (r && r.ok) root.playingName = s.name || s.path
+        if (r && r.ok) {
+            root.playingName = s.name || s.path
+            root.playPhase = "caching"; root.cacheLeft = Math.max(1, root.listenBuffer)  // #23
+            cacheTimer.restart()
+        }
+    }
+    function stopPlaying() {  // #23 — central stop: clears playback + caching phase
+        root.call("stop", []); root.playingName = ""
+        root.playPhase = "idle"; root.cacheLeft = 0; cacheTimer.stop()
+    }
+    Timer {
+        id: cacheTimer; interval: 1000; repeat: true   // #23 client-side caching countdown over the buffer secs
+        onTriggered: {
+            if (root.cacheLeft > 0) root.cacheLeft--
+            if (root.cacheLeft <= 0) { root.playPhase = "playing"; cacheTimer.stop() }
+        }
     }
     function uptime(ms) {
         if (!ms) return ""
@@ -155,7 +172,10 @@ Item {
     onOnionReadyChanged: if (onionReady) logEvent("Onion ready · " + onionAddr, "success")   // the tor link
     onOnionErrorChanged: if (onionError.length > 0) logEvent("Tor: " + onionError, "error")
     onOnionAddrChanged: if (onionAddr.length > 0 && !onionReady) logEvent("Tor: publishing descriptor…", "warning")
-    onPlayingNameChanged: logEvent(playingName.length > 0 ? "▶ Playing " + playingName : "■ Stopped playback", "info")
+    onPlayingNameChanged: {
+        logEvent(playingName.length > 0 ? "▶ Playing " + playingName : "■ Stopped playback", "info")
+        if (playingName.length === 0 && playPhase !== "idle") { playPhase = "idle"; cacheLeft = 0; cacheTimer.stop() }
+    }
 
     function copyText(t) { clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); clipHelper.text = "" }
     TextEdit { id: clipHelper; visible: false }
@@ -510,13 +530,28 @@ Item {
                             color: root.textMuted; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                         }
                     }
-                    RowLayout {  // now-playing (no pause for live)
+                    RowLayout {  // now-playing (no pause for live) — #23 caching → playing
+                        id: nowPlayingRow
                         visible: root.playingName.length > 0
+                        readonly property bool caching: root.playPhase === "caching"
                         Layout.fillWidth: true; spacing: 8
-                        Label { text: "▶ " + root.playingName; color: root.textPrimary; Layout.fillWidth: true; elide: Text.ElideRight }
+                        Label {
+                            id: nowPlayingLbl
+                            text: nowPlayingRow.caching
+                                  ? ("◌ Caching… " + root.cacheLeft + "s · " + root.playingName)
+                                  : ("▶ " + root.playingName)
+                            color: nowPlayingRow.caching ? root.warningYellow : root.textPrimary
+                            Layout.fillWidth: true; elide: Text.ElideRight
+                            SequentialAnimation {
+                                running: nowPlayingRow.caching; loops: Animation.Infinite
+                                NumberAnimation { target: nowPlayingLbl; property: "opacity"; from: 1.0; to: 0.45; duration: 600 }
+                                NumberAnimation { target: nowPlayingLbl; property: "opacity"; from: 0.45; to: 1.0; duration: 600 }
+                                onRunningChanged: if (!running) nowPlayingLbl.opacity = 1
+                            }
+                        }
                         Slider { from: 0; to: 100; value: root.volume; Layout.preferredWidth: 100
                             onMoved: { root.volume = Math.round(value); root.call("setVolume", [root.volume]) } }
-                        DarkButton { text: "Stop"; onClicked: { root.call("stop", []); root.playingName = "" } }
+                        DarkButton { text: "Stop"; onClicked: root.stopPlaying() }
                     }
                     RowLayout {  // + add private topic
                         Layout.fillWidth: true; spacing: 8
