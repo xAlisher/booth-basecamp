@@ -4,6 +4,16 @@
 > (vpavlin, #logos-core, 2026-06-25). Verdicts are tagged with confidence and backed by
 > source links. Permalinks are pinned to commit SHAs so line numbers don't drift.
 
+> **Update 2026-06-25 (after vpavlin's experiment).** The seed was deployed correctly, but
+> under **bare `logoscore`** on the Pi, `delivery_module` received **zero inbound**
+> (`messageReceived = 0`) — the block is **upstream of the gateway event**, so the seed
+> can't reach it. This **refutes the "delivery receives, only the gateway event is blocked"
+> model below for the headless case** — that model was an inference from the token
+> architecture, never a bare-`logoscore` measurement. Our 24/7 "headless" setup is the
+> **GUI AppImage under a display**, not `logoscore`, so we never had bare-`logoscore`
+> inbound data. **Confirmed path for the Pi: GUI-under-xvfb.** See
+> [§ Update: the headless experiment](#update-the-headless-experiment-2026-06-25).
+
 ## The question
 
 Two parts, asked while bringing up a Basecamp core module (a Meshtastic↔Logos Messaging
@@ -120,13 +130,58 @@ load.
 
 ---
 
-## The cheap experiment for the headless/RPi case `[? — unverified]`
+## Update: the headless experiment (2026-06-25)
 
-Everything above is the **GUI/ui-host** path. Whether a bare core consumer receives inbound
-events under **headless `logoscore`** (no host bootstrap at all) is the open question — and
-it's a ~5-line test on code you already have. Your blocked direction is *inbound*
-(delivery → your module), which needs `delivery_module` to hold a token for **your** module
-so it's authorized to push back. So right before `getClient`, seed both names:
+The seed (below) was deployed and correct, and vpavlin ran it on the Pi. Result:
+
+| Observation | Verdict |
+|---|---|
+| Seed implemented per this doc; gateway loads; **outbound** (mesh→LM) works | ✅ |
+| Off-mesh publish + encryption correct (laptop decrypted the messages) | ✅ |
+| **GUI host path** receives inbound fine (on the laptop) | ✅ — confirms our deployment method |
+| **Bare `logoscore`** on the Pi: delivery's inbound `messageReceived = 0` | ❌ — nothing received |
+
+**This refutes the model in this doc for the headless case.** The doc assumed *"delivery
+receives + emits, only the gateway event is blocked, so the seed fixes it."* That was an
+**inference from the capability-token architecture, never a bare-`logoscore` measurement.**
+Under bare `logoscore` the block is **upstream of the gateway event**: delivery itself logs
+zero inbound, so there is no emitted event for the seed to authorize. **The seed alone cannot
+unblock bare `logoscore`.** `[REJECTED for headless]`
+
+**Why we had no data:** our 24/7 "headless" deployment is the **GUI AppImage under a display**
+(`launch-khidr.sh`: `export DISPLAY=:0` + `nohup "$APP"`), **not `logoscore`**. We had never
+landed an inbound delivery message under bare `logoscore`. So vpavlin tested virgin territory.
+
+### Confirmed path for the Pi `[CONFIRMED]`
+
+**Run the GUI host under `xvfb`** (the path we use, the one shown to receive inbound). The
+seed/`ui_qml` discussion above applies to the GUI/ui-host path; bare `logoscore` is not a
+proven host for inbound delivery on either side.
+
+### Before fully closing it — one diagnostic fork `[? — measurement resolves it]`
+
+`messageReceived = 0` means different things depending on **whose counter** it is:
+
+- **Delivery's *own* log/metric (0 frames off the network)** → this is a **networking /
+  subscribe** problem, *not* the capability layer. Delivery's Waku relay does **not** need a
+  capability token to receive from the network — so it *should* receive under bare `logoscore`
+  **if it is subscribed and has relay peers**. The `logos.dev` preset ships **zero bootstrap
+  nodes** (`bootstrapNodes=0 → currentPeerIds=[]`); we had to supply entry multiaddrs
+  explicitly →
+  [`receiver_ui_plugin.cpp#L143-L163`](https://github.com/xAlisher/receiver-basecamp/blob/90351731439b18e3661e57f2b3abdddc3f8140b3/src/receiver_ui_plugin.cpp#L143-L163).
+  **A peerless node receives 0 inbound regardless of host** — rule this out first
+  (`getNodeInfo` peer count; confirm `subscribe` registered).
+- **Your gateway's `onDeliveryMessage` (delivery received but didn't push to you)** → *that's*
+  the seed's domain (the Layer-B story this doc described).
+
+So: if delivery's own log shows frames arriving while your callback stays 0 → clean evidence
+for the seed / #150 story. If delivery's own log shows 0 **with confirmed peers + subscribe**
+→ a separate, bigger gap (delivery networking under `logoscore`) that deserves its own issue.
+
+### The seed itself (for the record)
+
+Right before `getClient`, seed both names — your blocked direction is *inbound*
+(delivery → your module), which needs `delivery_module` to hold a token for **your** module:
 
 ```cpp
 TokenManager& tm = TokenManager::instance();
@@ -134,12 +189,9 @@ tm.saveToken("delivery_module", "x");          // so your outbound calls pass
 tm.saveToken("<your_module_name>", "x");       // so delivery is authorized to push events back to you
 ```
 
-Then run under `logoscore` and watch whether your `onDeliveryMessage` finally fires.
-
-- **Fires** → that's the headless unblock, same trick we use, just in a core plugin instead
-  of ui-host.
-- **Doesn't** → strong evidence the inbound-event authorization needs something only the host
-  loader does (a real #150 fix, not a seed) — worth recording on the issue.
+Per the experiment above, this is **necessary-but-not-sufficient under bare `logoscore`**: it
+addresses the consumer-authorization layer, but does nothing if delivery isn't receiving
+inbound in the first place.
 
 ---
 
