@@ -55,3 +55,16 @@ Nix only sees git-tracked files — `git add -A` before building.
 
 **P0 vertical slice (#1–#9) = the thesis demo:** a host broadcasts, a separate listener
 discovers-and-plays over LogosMessaging with no central index.
+
+### Parallel Society Radio — content station (GitHub issues #28–#34, branch `feat/parallel-society-radio`)
+Turns the v1 plumbing into a real curated station from Parallel Society festival recordings, streamed
+headless from Sneg. Feeds #26. Target: DWeb Camp (Jul 8–12). Detail in the plan doc §Content Station.
+| GH # | Title | Pri | Status |
+|------|-------|-----|--------|
+| 28 | Content discovery → table (YouTube @Logos_network + Discord) | P0 | todo |
+| 29 | Rip + transcode + EBU-R128 loudness pass | P0 | todo |
+| 30 | Liquidsoap on Sneg + docs + fieldcraft skills | P1 | todo |
+| 31 | Station programming (station.liq) | P1 | todo |
+| 32 | Jingles (chair28980 — invited) | P1 | todo |
+| 33 | Assemble + launch | P0 | todo |
+| 34 | Verify in Receiver | P0 | todo |
