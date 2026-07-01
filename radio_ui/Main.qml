@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Logos.Theme      // logos-design-system (native on RC3+ Basecamp) — skill: logos-design-system-adoption
 
 // radio_ui — dark theme, matching keeper/stash/beacon (palette + header title + dependency
 // status pill on the right). Logic lives in radio_module (the QML sandbox blocks network/
@@ -10,18 +11,20 @@ Item {
     id: root
     width: 480; height: 640
 
-    // ── Dark palette (keeper/stash) ──────────────────────────────────────────
-    readonly property color bgPrimary:     "#171717"
-    readonly property color bgSecondary:   "#262626"
-    readonly property color bgActive:      "#332A27"
-    readonly property color textPrimary:   "#FFFFFF"
-    readonly property color textSecondary: "#A4A4A4"
-    readonly property color textMuted:     "#5D5D5D"
-    readonly property color accentOrange:  "#FF5000"
-    readonly property color successGreen:  "#22C55E"
-    readonly property color warningYellow: "#F59E0B"
-    readonly property color errorRed:      "#FB3748"
-    readonly property color borderColor:   "#383838"
+    // ── Palette — sourced from logos-design-system (Theme.palette semantic tokens).
+    // Property names kept so no usage site changes; colors now come from the DS,
+    // so the whole module tracks the platform theme. (skill: logos-design-system-adoption)
+    readonly property color bgPrimary:     Theme.palette.background
+    readonly property color bgSecondary:   Theme.palette.backgroundSecondary
+    readonly property color bgActive:      Theme.palette.surface
+    readonly property color textPrimary:   Theme.palette.text
+    readonly property color textSecondary: Theme.palette.textSecondary
+    readonly property color textMuted:     Theme.palette.textMuted
+    readonly property color accentOrange:  Theme.palette.primary
+    readonly property color successGreen:  Theme.palette.success
+    readonly property color warningYellow: Theme.palette.warning
+    readonly property color errorRed:      Theme.palette.error
+    readonly property color borderColor:   Theme.palette.border
 
     // ── State ────────────────────────────────────────────────────────────────
     property var    streamCard:   null
