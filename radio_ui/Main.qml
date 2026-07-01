@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Logos.Theme      // logos-design-system (native on RC3+ Basecamp) — skill: logos-design-system-adoption
 
 // radio_ui — dark theme, matching keeper/stash/beacon (palette + header title + dependency
 // status pill on the right). Logic lives in radio_module (the QML sandbox blocks network/
@@ -10,31 +11,36 @@ Item {
     id: root
     width: 480; height: 640
 
-    // ── Dark palette (keeper/stash) ──────────────────────────────────────────
-    readonly property color bgPrimary:     "#171717"
-    readonly property color bgSecondary:   "#262626"
-    readonly property color bgActive:      "#332A27"
-    readonly property color textPrimary:   "#FFFFFF"
-    readonly property color textSecondary: "#A4A4A4"
-    readonly property color textMuted:     "#5D5D5D"
-    readonly property color accentOrange:  "#FF5000"
-    readonly property color successGreen:  "#22C55E"
-    readonly property color warningYellow: "#F59E0B"
-    readonly property color errorRed:      "#FB3748"
-    readonly property color borderColor:   "#383838"
+    // ── Palette — sourced from logos-design-system (Theme.palette semantic tokens).
+    // Property names kept so no usage site changes; colors now come from the DS,
+    // so the whole module tracks the platform theme. (skill: logos-design-system-adoption)
+    readonly property color bgPrimary:     Theme.palette.background
+    readonly property color bgSecondary:   Theme.palette.backgroundSecondary
+    readonly property color bgActive:      Theme.palette.surface
+    readonly property color textPrimary:   Theme.palette.text
+    readonly property color textSecondary: Theme.palette.textSecondary
+    readonly property color textMuted:     Theme.palette.textMuted
+    readonly property color accentOrange:  Theme.palette.primary
+    readonly property color successGreen:  Theme.palette.success
+    readonly property color warningYellow: Theme.palette.warning
+    readonly property color errorRed:      Theme.palette.error
+    readonly property color borderColor:   Theme.palette.border
 
     // ── State ────────────────────────────────────────────────────────────────
     property var    streamCard:   null
     property string streamState:  "idle"
     property string streamPrivacy: "public"   // public | onion (this host's broadcast)
-    property int    listenBuffer:  8           // #17 listener jitter buffer (seconds)
+    property int    listenBuffer:  20          // #17/#22 listener jitter buffer (seconds); ~20s baseline, up to 60s
     property string onionAddr:    ""          // our .onion once published (onion mode)
     property bool   onionReady:   false        // hidden-service descriptor published → reachable
     property string onionError:   ""           // non-empty → Tor setup failed/timed out
     property var    stations:     []
     property string playingName:  ""
+    property string playPhase:    "idle"      // #23 caching-on-play: idle | caching | playing
+    property int    cacheLeft:    0
     property bool   discoveryStarted: false
     property int    volume:       75
+    property bool   settingsOpen: false        // #19 cogwheel settings pane
     property string deliveryState: "offline"   // offline | ready | connected
     property string deliveryPeerId: ""
 
@@ -102,7 +108,22 @@ Item {
     }
     function playStation(s) {
         var r = root.call("play", [s.streamUrl, s.name || ""])
-        if (r && r.ok) root.playingName = s.name || s.path
+        if (r && r.ok) {
+            root.playingName = s.name || s.path
+            root.playPhase = "caching"; root.cacheLeft = Math.max(1, root.listenBuffer)  // #23
+            cacheTimer.restart()
+        }
+    }
+    function stopPlaying() {  // #23 — central stop: clears playback + caching phase
+        root.call("stop", []); root.playingName = ""
+        root.playPhase = "idle"; root.cacheLeft = 0; cacheTimer.stop()
+    }
+    Timer {
+        id: cacheTimer; interval: 1000; repeat: true   // #23 client-side caching countdown over the buffer secs
+        onTriggered: {
+            if (root.cacheLeft > 0) root.cacheLeft--
+            if (root.cacheLeft <= 0) { root.playPhase = "playing"; cacheTimer.stop() }
+        }
     }
     function uptime(ms) {
         if (!ms) return ""
@@ -154,7 +175,10 @@ Item {
     onOnionReadyChanged: if (onionReady) logEvent("Onion ready · " + onionAddr, "success")   // the tor link
     onOnionErrorChanged: if (onionError.length > 0) logEvent("Tor: " + onionError, "error")
     onOnionAddrChanged: if (onionAddr.length > 0 && !onionReady) logEvent("Tor: publishing descriptor…", "warning")
-    onPlayingNameChanged: logEvent(playingName.length > 0 ? "▶ Playing " + playingName : "■ Stopped playback", "info")
+    onPlayingNameChanged: {
+        logEvent(playingName.length > 0 ? "▶ Playing " + playingName : "■ Stopped playback", "info")
+        if (playingName.length === 0 && playPhase !== "idle") { playPhase = "idle"; cacheLeft = 0; cacheTimer.stop() }
+    }
 
     function copyText(t) { clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); clipHelper.text = "" }
     TextEdit { id: clipHelper; visible: false }
@@ -293,6 +317,47 @@ Item {
                 StatusPill { visible: root.streamCard !== null; dot: root.obsDotColor(); label: root.obsLabel() }
                 StatusPill { visible: root.streamCard !== null && root.streamPrivacy === "onion"
                              dot: root.onionDotColor(); label: root.onionLabel() }
+            }
+            // cogwheel — opens the settings pane (#19)
+            Rectangle {
+                Layout.alignment: Qt.AlignVCenter
+                implicitWidth: 28; implicitHeight: 28; radius: 6
+                color: gearArea.containsMouse ? root.bgSecondary : "transparent"
+                border.color: root.settingsOpen ? root.accentOrange : root.borderColor; border.width: 1
+                Text { anchors.centerIn: parent; text: "⚙"; font.pixelSize: 15
+                       color: root.settingsOpen ? root.accentOrange : root.textSecondary }
+                MouseArea { id: gearArea; anchors.fill: parent; hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.settingsOpen = !root.settingsOpen }
+            }
+        }
+
+        // ── Settings pane (cogwheel, #19) — listener buffer lives here now ────
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.leftMargin: 16; Layout.rightMargin: 16; Layout.topMargin: 6
+            visible: root.settingsOpen
+            implicitHeight: setCol.implicitHeight + 20
+            color: root.bgSecondary; radius: 6; border.color: root.borderColor; border.width: 1
+            ColumnLayout {
+                id: setCol
+                anchors { top: parent.top; left: parent.left; right: parent.right; margins: 10 }
+                spacing: 6
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { text: "Listener buffer"; color: root.textSecondary; font.pixelSize: 11 }
+                    Item { Layout.fillWidth: true }
+                    Label { text: root.listenBuffer + "s"; color: root.textPrimary; font.pixelSize: 11 }
+                }
+                Slider {
+                    id: bufSlider; from: 2; to: 60; stepSize: 1; value: root.listenBuffer
+                    Layout.fillWidth: true
+                    onMoved: { root.listenBuffer = Math.round(value); root.call("setListenBuffer", [root.listenBuffer]) }
+                }
+                Label {
+                    text: "Seconds behind live — rides out Tor latency so audio doesn't chop."
+                    color: root.textMuted; font.pixelSize: 10; Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
             }
         }
 
@@ -468,23 +533,28 @@ Item {
                             color: root.textMuted; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                         }
                     }
-                    RowLayout {  // now-playing (no pause for live)
+                    RowLayout {  // now-playing (no pause for live) — #23 caching → playing
+                        id: nowPlayingRow
                         visible: root.playingName.length > 0
+                        readonly property bool caching: root.playPhase === "caching"
                         Layout.fillWidth: true; spacing: 8
-                        Label { text: "▶ " + root.playingName; color: root.textPrimary; Layout.fillWidth: true; elide: Text.ElideRight }
+                        Label {
+                            id: nowPlayingLbl
+                            text: nowPlayingRow.caching
+                                  ? ("◌ Caching… " + root.cacheLeft + "s · " + root.playingName)
+                                  : ("▶ " + root.playingName)
+                            color: nowPlayingRow.caching ? root.warningYellow : root.textPrimary
+                            Layout.fillWidth: true; elide: Text.ElideRight
+                            SequentialAnimation {
+                                running: nowPlayingRow.caching; loops: Animation.Infinite
+                                NumberAnimation { target: nowPlayingLbl; property: "opacity"; from: 1.0; to: 0.45; duration: 600 }
+                                NumberAnimation { target: nowPlayingLbl; property: "opacity"; from: 0.45; to: 1.0; duration: 600 }
+                                onRunningChanged: if (!running) nowPlayingLbl.opacity = 1
+                            }
+                        }
                         Slider { from: 0; to: 100; value: root.volume; Layout.preferredWidth: 100
                             onMoved: { root.volume = Math.round(value); root.call("setVolume", [root.volume]) } }
-                        DarkButton { text: "Stop"; onClicked: { root.call("stop", []); root.playingName = "" } }
-                    }
-                    RowLayout {  // listener jitter buffer (#17) — deeper rides out Tor latency spikes
-                        Layout.fillWidth: true; spacing: 8
-                        Label { text: "Buffer"; color: root.textSecondary; font.pixelSize: 12; Layout.preferredWidth: 48 }
-                        Slider {
-                            id: bufSlider; from: 2; to: 20; stepSize: 1; value: root.listenBuffer
-                            Layout.fillWidth: true
-                            onMoved: { root.listenBuffer = Math.round(value); root.call("setListenBuffer", [root.listenBuffer]) }
-                        }
-                        Label { text: root.listenBuffer + "s"; color: root.textPrimary; font.pixelSize: 12; Layout.preferredWidth: 30 }
+                        DarkButton { text: "Stop"; onClicked: root.stopPlaying() }
                     }
                     RowLayout {  // + add private topic
                         Layout.fillWidth: true; spacing: 8
