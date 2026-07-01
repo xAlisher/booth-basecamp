@@ -3,7 +3,7 @@
 Source table for the station library (issue **#28**). Feeds ripping/normalisation (**#29**) and
 programming (**#31**). Primary anchor: **https://www.youtube.com/@Logos_network**.
 
-**Status:** ✅ YouTube sweep complete · ⏳ Discord sweep pending · ⏳ **awaiting Alisher's confirm** before ripping.
+**Status:** ✅ YouTube sweep complete · ✅ scope confirmed **festival-only (A+B, 13 items)** · ✅ rip+loudness pipeline verified (`loudnorm.sh`) · ⏳ Discord sweep deferred (optional).
 
 Content splits into **two events** on the channel:
 - **Parallel Society festival** (recent, 2026) — the target: **6 DJ/live sets** + **7 talks** (both tagged
