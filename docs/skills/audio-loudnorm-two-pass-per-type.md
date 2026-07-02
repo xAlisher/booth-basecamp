@@ -29,10 +29,11 @@ Two-pass `ffmpeg loudnorm` (linear, accurate) — **talks → −16 LUFS / TP �
 ```bash
 # pass 1: measure → JSON (input_i/tp/lra/thresh + target_offset)
 ffmpeg -nostdin -i in.mp3 -af loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json -f null -
-# pass 2: apply with measured values, re-encode 320k
+# pass 2: apply with measured values, re-encode 320k. -map_metadata 0 KEEPS the ID3 tags
+# (a plain loudnorm re-encode drops title/artist → later now-playing/metadata reads blank).
 ffmpeg -nostdin -i in.mp3 -af \
   loudnorm=I=-16:TP=-1.5:LRA=11:measured_I=..:measured_TP=..:measured_LRA=..:measured_thresh=..:offset=..:linear=true \
-  -c:a libmp3lame -b:a 320k out.mp3
+  -map_metadata 0 -id3v2_version 3 -c:a libmp3lame -b:a 320k out.mp3
 ```
 Verify: `ffmpeg -nostdin -i out.mp3 -af ebur128 -f null -` → integrated within ±1 LUFS of target.
 Measured this session: talk −21.3→−16.1 ✓, DJ set −13.1→−14.0 ✓. Content is then already at target,

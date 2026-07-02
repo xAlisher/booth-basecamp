@@ -22,6 +22,6 @@ print(d['input_i'],d['input_tp'],d['input_lra'],d['input_thresh'],d['target_offs
 # pass 2 — apply linearly, re-encode mp3 320
 ffmpeg -hide_banner -loglevel error -y -i "$IN" \
   -af "loudnorm=I=$I:TP=$TP:LRA=11:measured_I=$MI:measured_TP=$MTP:measured_LRA=$MLRA:measured_thresh=$MTHRESH:offset=$OFFSET:linear=true:print_format=summary" \
-  -c:a libmp3lame -b:a 320k "$OUT"
+  -map_metadata 0 -id3v2_version 3 -c:a libmp3lame -b:a 320k "$OUT"   # -map_metadata: keep title/artist tags (needed for #35 now-playing)
 
 echo "  after:  $(measure "$OUT") LUFS   (target $I)"
