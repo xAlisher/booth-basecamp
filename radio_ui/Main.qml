@@ -2,11 +2,11 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// radio_ui — broadcast-only (#39). Listening now lives in the Receiver module; this is a focused
-// broadcaster: set up a station, hand OBS the RTMP creds, announce over delivery (direct or .onion).
-// Dark theme matching keeper/stash/beacon. Logic lives in radio_module (the QML sandbox blocks network/
-// subprocess). Sandbox rules (qml-sandbox-restrictions): no QtMultimedia/QtGraphicalEffects/
-// QtQuick.Shapes/FileDialog/network/Qt.openUrlExternally. Inside layouts use implicitHeight.
+// radio_ui — broadcast-only (#39), universal (#40). Listening lives in the Receiver module; this is a
+// focused broadcaster. Data layer is the universal QtRO backend: `logos.module("radio_ui")` exposes
+// PROPs (streamState, deliveryState, streamCardJson, …) mirrored from radio_module, and SLOTs
+// (startStream/stopStream/regenerateKey/regenerateOnion) called via logos.watch(...). No callModule.
+// Dark theme (Phase 3 = design-system). Sandbox rules (qml-sandbox-restrictions) still apply.
 Item {
     id: root
     width: 480; height: 640
@@ -24,45 +24,20 @@ Item {
     readonly property color errorRed:      "#FB3748"
     readonly property color borderColor:   "#383838"
 
-    // ── State (broadcast only) ─────────────────────────────────────────────────
-    property var    streamCard:   null
-    property string streamState:  "idle"
-    property string streamPrivacy: "public"   // public | onion (this host's broadcast)
-    property string onionAddr:    ""          // our .onion once published (onion mode)
-    property bool   onionReady:   false        // hidden-service descriptor published → reachable
-    property string onionError:   ""           // non-empty → Tor setup failed/timed out
-    property string deliveryState: "offline"   // offline | ready | connected (announce path)
-    property string deliveryPeerId: ""
+    // ── Universal backend + state bound to its PROPs ───────────────────────────
+    readonly property var    backend: logos.module("radio_ui")
+    readonly property bool    ready:   logos.isViewModuleReady("radio_ui")
+    readonly property string  streamState:   backend ? backend.streamState   : "idle"
+    readonly property string  streamPrivacy: backend ? backend.streamPrivacy : "public"
+    readonly property string  onionAddr:     backend ? backend.onionAddr     : ""
+    readonly property bool    onionReady:    backend ? backend.onionReady    : false
+    readonly property string  onionError:    backend ? backend.onionError    : ""
+    readonly property string  deliveryState: backend ? backend.deliveryState : "offline"
+    // streamCard: parsed from the streamCardJson PROP ("" = no live card → show the setup form).
+    readonly property var     streamCard: (backend && backend.streamCardJson && backend.streamCardJson.length > 0)
+                                          ? JSON.parse(backend.streamCardJson) : null
 
-    // ── Backend bridge ───────────────────────────────────────────────────────
-    function callParse(method, args) {
-        try {
-            var raw = logos.callModule("radio_module", method, args || [])
-            var t = JSON.parse(raw)
-            return (typeof t === "string") ? JSON.parse(t) : t
-        } catch (e) { return null }
-    }
-    function errorMessage(code) {
-        var m = {
-            "name_required": "Enter a station name first.",
-            "already_streaming": "You're already broadcasting.",
-            "mediamtx_not_found": "Broadcast server (MediaMTX) isn't available on this system.",
-            "mediamtx_spawn_failed": "Couldn't start the broadcast server.",
-            "mediamtx_port_or_config": "Broadcast server failed to start — a port may already be in use.",
-            "config_write_failed": "Couldn't write the broadcast server config.",
-            "no_delivery_client": "Announce service (delivery_module) is unavailable.",
-            "invalid_topic": "That topic isn't valid (use /path/like/this)."
-        }
-        return m[code] || ("Something went wrong (" + code + ").")
-    }
-    function call(method, args) {
-        var r = callParse(method, args)
-        // All errors go to the activity log — no banners/toasts.
-        if (!r) logEvent("No response from radio_module.", "error")
-        else if (r.ok === false) logEvent(errorMessage(r.error), "error")
-        return r
-    }
-
+    // ── Backend actions (SLOTs via logos.watch — QtRO transport) ───────────────
     function startStream() {
         var onion = privacyGroup.checkedButton === onionBtn
         var cfg = JSON.stringify({
@@ -71,37 +46,29 @@ Item {
             privacy: onion ? "onion" : "public",
             description: descField.text
         })
-        root.streamPrivacy = onion ? "onion" : "public"
-        root.onionAddr = ""; root.onionReady = false; root.onionError = ""
-        var r = call("startStream", [cfg])
-        if (r && r.ok) { root.streamState = "waiting"; root.streamCard = r
-            logEvent("Stream started: " + nameField.text + (onion ? " · onion" : " · direct"), "success") }
+        logos.watch(backend.startStream(cfg),
+            function(){ logEvent("Stream started: " + nameField.text + (onion ? " · onion" : " · direct"), "success") },
+            function(){ logEvent("Couldn't start the stream.", "error") })
     }
     function stopStream() {
-        logEvent("Stream stopped", "info")
-        call("stopStream", []); root.streamCard = null; root.streamState = "idle"
-        root.streamPrivacy = "public"; root.onionAddr = ""; root.onionReady = false; root.onionError = ""
+        logos.watch(backend.stopStream(),
+            function(){ logEvent("Stream stopped", "info") }, function(){})
     }
-    // #11 — after a Basecamp restart, rehydrate the OBS card if a stream auto-resumed in the backend.
-    Component.onCompleted: {
-        var c = root.callParse("getStreamCard", [])
-        if (c && c.ok) {
-            root.streamCard = c; root.streamState = "waiting"
-            root.streamPrivacy = c.privacy || "public"
-            logEvent("Resumed stream after restart: " + (c.name || ""), "success")
-        }
+    function regenerateKey() {
+        logos.watch(backend.regenerateKey(),
+            function(){ logEvent("Stream key rotated — re-enter the new key in OBS", "warning") }, function(){})
     }
+    function regenerateOnion() {
+        logos.watch(backend.regenerateOnion(),
+            function(){ logEvent("Rotating Tor address — listeners will rediscover", "warning") }, function(){})
+    }
+
     function stateLabel() {
-        // In onion mode the announce is held until the Tor descriptor publishes (~30–60s).
         if (root.streamPrivacy === "onion" && !root.onionReady
             && (root.streamState === "live" || root.streamState === "receiving"))
             return "Publishing over Tor…"
         return root.streamState === "live" ? "Live (announcing)"
              : root.streamState === "receiving" ? "Receiving stream…" : "Waiting for OBS…"
-    }
-    function stateColor() {
-        return root.streamState === "live" ? root.errorRed
-             : root.streamState === "receiving" ? root.warningYellow : root.textMuted
     }
     function deliveryDotColor() {
         return root.deliveryState === "connected" ? root.successGreen
@@ -111,18 +78,16 @@ Item {
         return root.deliveryState === "connected" ? "Announce online"
              : root.deliveryState === "ready" ? "Announce ready" : "Announce offline"
     }
-    // OBS pill (#15) — visible while streaming
     function obsLive() { return root.streamState === "live" || root.streamState === "receiving" }
     function obsDotColor() { return obsLive() ? root.successGreen : root.warningYellow }
     function obsLabel() { return obsLive() ? "OBS live" : "Waiting for OBS" }
-    // Onion pill (#15) — visible while streaming in onion mode
     function onionDotColor() { return root.onionError.length > 0 ? root.errorRed : root.onionReady ? root.successGreen : root.warningYellow }
     function onionLabel() { return root.onionError.length > 0 ? "Tor error" : root.onionReady ? "Onion ready" : "Publishing over Tor…" }
 
-    // ── Activity log (#12 / #15): every pill change + error is a timestamped record ──────────
+    // ── Activity log (#12 / #15) ───────────────────────────────────────────────
     function ts2(n) { return (n < 10 ? "0" : "") + n }
     function nowTs() { var d = new Date(); return "[" + ts2(d.getHours()) + ":" + ts2(d.getMinutes()) + ":" + ts2(d.getSeconds()) + "]" }
-    function logEvent(msg, level) {  // oldest-first, newest at bottom + auto-scroll (keycard ActivityLog)
+    function logEvent(msg, level) {
         logModel.append({ "ts": nowTs(), "msg": msg, "level": level || "info" })
         if (logModel.count > 100) logModel.remove(0)
         logList.positionViewAtEnd()
@@ -130,43 +95,19 @@ Item {
     function levelColor(l) { return l === "success" ? root.successGreen : l === "warning" ? root.warningYellow : l === "error" ? root.errorRed : root.textSecondary }
     ListModel { id: logModel }
 
-    // Fold every status/error transition into the activity log (onXChanged fires only on real change).
+    // Backend pushes human-readable lines via the activity SIGNAL; status transitions fold into the log.
+    Connections {
+        target: root.backend
+        ignoreUnknownSignals: true
+        function onActivity(line) { root.logEvent(line, "info") }
+    }
     onDeliveryStateChanged: logEvent(deliveryLabel(), deliveryState === "connected" ? "success" : deliveryState === "ready" ? "warning" : "error")
     onStreamStateChanged: if (streamCard !== null) logEvent("OBS: " + obsLabel(), obsLive() ? "success" : "warning")
-    onOnionReadyChanged: if (onionReady) logEvent("Onion ready · " + onionAddr, "success")   // the tor link
+    onOnionReadyChanged: if (onionReady) logEvent("Onion ready · " + onionAddr, "success")
     onOnionErrorChanged: if (onionError.length > 0) logEvent("Tor: " + onionError, "error")
-    onOnionAddrChanged: if (onionAddr.length > 0 && !onionReady) logEvent("Tor: publishing descriptor…", "warning")
 
     function copyText(t) { clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); clipHelper.text = "" }
     TextEdit { id: clipHelper; visible: false }
-
-    // ── Pollers ──────────────────────────────────────────────────────────────
-    Timer {  // delivery node status (always — drives the header pill)
-        interval: 2000; repeat: true; running: true; triggeredOnStart: true
-        onTriggered: { var r = root.callParse("getDeliveryStatus", []);
-            if (r && r.ok) { root.deliveryState = r.state; root.deliveryPeerId = r.peerId || "" } }
-    }
-    Timer {  // origin status + card sync (#8/#11) — always on, keeps the UI in lock-step with the backend
-        interval: 1500; repeat: true; running: true; triggeredOnStart: true
-        onTriggered: {
-            var r = root.callParse("getStreamStatus", [])
-            if (!r) return
-            var streaming = r.state && r.state !== "idle"
-            // Backend broadcasting but the UI has no card (restart / auto-resume / module reopened) →
-            // rehydrate, so the Stream form is never shown while a station is live (no "already broadcasting").
-            if (streaming && root.streamCard === null) {
-                var c = root.callParse("getStreamCard", [])
-                if (c && c.ok) { root.streamCard = c; root.streamPrivacy = c.privacy || "public" }
-            } else if (!streaming && root.streamCard !== null) {
-                root.streamCard = null   // backend stopped (stream ended / stopped elsewhere) → drop stale card
-            }
-            if (r.state) { root.streamState = r.state
-                if (r.privacy) root.streamPrivacy = r.privacy
-                if (r.onion !== undefined) root.onionAddr = r.onion
-                if (r.onionReady !== undefined) root.onionReady = r.onionReady
-                root.onionError = r.onionError || "" }
-        }
-    }
 
     // ── Reusable dark controls ───────────────────────────────────────────────
     component StatusPill: Rectangle {
@@ -182,7 +123,7 @@ Item {
             id: spRow
             anchors { left: parent.left; leftMargin: 10; verticalCenter: parent.verticalCenter }
             spacing: 6
-            Rectangle { width: 7; height: 7; radius: 4; Layout.alignment: Qt.AlignVCenter; color: pill.dot }
+            Rectangle { implicitWidth: 7; implicitHeight: 7; radius: 4; Layout.alignment: Qt.AlignVCenter; color: pill.dot }
             Text { text: pill.label; font.pixelSize: 11; color: root.textPrimary }
         }
     }
@@ -222,7 +163,6 @@ Item {
             border.width: 1
         }
     }
-    // Native text layout (no overlap) + dark indicator; label recoloured via palette.
     component DarkRadio: RadioButton {
         id: dr
         spacing: 8
@@ -265,9 +205,9 @@ Item {
             }
         }
 
-        Rectangle { Layout.fillWidth: true; height: 1; color: root.borderColor; Layout.topMargin: 6 }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.borderColor; Layout.topMargin: 6 }
 
-        // ── Broadcast body (single view — no tabs since listening moved to Receiver) ──
+        // ── Broadcast body (single view) ──────────────────────────────────────
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true
             ColumnLayout {
@@ -290,7 +230,6 @@ Item {
                     RowLayout {
                         spacing: 16
                         ButtonGroup { id: privacyGroup }
-                        // Onion is the default — internet radio shouldn't be LAN-only or leak the host IP.
                         DarkRadio { id: onionBtn;  text: "Onion (Tor)";  checked: true; ButtonGroup.group: privacyGroup }
                         DarkRadio { id: directBtn; text: "Direct (LAN)"; ButtonGroup.group: privacyGroup }
                     }
@@ -303,11 +242,10 @@ Item {
                     }
                     Label { text: "Description (optional)"; color: root.textSecondary; font.pixelSize: 12 }
                     DarkField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
-                    AccentButton { text: "Start"; enabled: nameField.text.length > 0; onClicked: root.startStream() }
+                    AccentButton { text: "Start"; enabled: root.ready && nameField.text.length > 0; onClicked: root.startStream() }
                 }
 
-                // Stream-credentials card — live status is in the header pills (OBS / Onion);
-                // every state change + the .onion link land in the activity log.
+                // Stream-credentials card
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 10
                     visible: root.streamCard !== null
@@ -320,7 +258,7 @@ Item {
                         id: cr
                         property string label: ""
                         property string value: ""
-                        property bool secret: false   // masked with dots (safe for screenshots)
+                        property bool secret: false
                         property bool revealed: false
                         property bool canRegen: false
                         signal regen()
@@ -331,20 +269,16 @@ Item {
                             echoMode: (cr.secret && !cr.revealed) ? TextInput.Password : TextInput.Normal
                         }
                         DarkButton { visible: cr.secret; text: cr.revealed ? "Hide" : "Show"; onClicked: cr.revealed = !cr.revealed }
-                        DarkButton { visible: cr.canRegen; text: "⟳ New"; onClicked: cr.regen() }   // #17 rotate key
-                        DarkButton { text: "Copy"; onClicked: root.copyText(cr.value) }   // copies the real value
+                        DarkButton { visible: cr.canRegen; text: "⟳ New"; onClicked: cr.regen() }
+                        DarkButton { text: "Copy"; onClicked: root.copyText(cr.value) }
                     }
                     CopyRow { label: "RTMP Server"; value: root.streamCard ? root.streamCard.rtmpUrl : "" }
                     CopyRow {
                         label: "Stream Key"; value: root.streamCard ? root.streamCard.streamKey : ""
                         secret: true; canRegen: true
-                        onRegen: {  // #17 rotate the publish key (revokes the old OBS key)
-                            var r = root.callParse("regenerateKey", [])
-                            if (r && r.ok) { root.streamCard = r
-                                logEvent("Stream key rotated — re-enter the new key in OBS", "warning") }
-                        }
+                        onRegen: root.regenerateKey()
                     }
-                    RowLayout {  // #17 Tor address persists across restarts; rotate on demand
+                    RowLayout {
                         visible: root.streamPrivacy === "onion"
                         Layout.fillWidth: true; spacing: 8
                         Label { text: "Tor address"; color: root.textSecondary; Layout.preferredWidth: 90; font.pixelSize: 12 }
@@ -352,11 +286,7 @@ Item {
                             Layout.fillWidth: true; font.pixelSize: 11; color: root.textMuted; elide: Text.ElideRight
                             text: root.onionReady ? "stable · persists across restarts" : "publishing…"
                         }
-                        DarkButton { text: "⟳ New address"; onClicked: {  // rotate the .onion identity
-                            var r = root.callParse("regenerateOnion", [])
-                            if (r && r.ok) { root.onionReady = false; root.onionAddr = ""
-                                logEvent("Rotating Tor address — listeners will rediscover", "warning") }
-                        } }
+                        DarkButton { text: "⟳ New address"; onClicked: root.regenerateOnion() }
                     }
                     DarkButton { text: "Stop"; onClicked: root.stopStream() }
                 }
@@ -364,13 +294,12 @@ Item {
             }
         }
 
-        // ── Activity log (#12) — keycard ActivityLog: fixed height, top border, icon copy button ──
+        // ── Activity log (#12) ────────────────────────────────────────────────
         Rectangle {
             Layout.fillWidth: true; Layout.leftMargin: 16; Layout.rightMargin: 16; Layout.bottomMargin: 10
-            Layout.preferredHeight: 172   // fixed size — does not float with content (matches keycard)
+            Layout.preferredHeight: 172
             color: root.bgSecondary; radius: 6
 
-            // top border
             Rectangle {
                 anchors { top: parent.top; left: parent.left; right: parent.right }
                 height: 1; color: root.borderColor
@@ -378,7 +307,6 @@ Item {
             Text { anchors { top: parent.top; left: parent.left; topMargin: 8; leftMargin: 12 }
                    text: "Activity"; color: root.textSecondary; font.pixelSize: 12; font.bold: true }
 
-            // clear icon
             Rectangle {
                 visible: logModel.count > 0
                 anchors { top: parent.top; right: copyBtn.left; topMargin: 8; rightMargin: 10 }
@@ -387,7 +315,6 @@ Item {
                 MouseArea { id: clearArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: logModel.clear() }
                 ToolTip { visible: clearArea.containsMouse; text: "Clear"; delay: 500 }
             }
-            // copy icon — two overlapping rectangles (keycard ActivityLog style)
             Rectangle {
                 id: copyBtn
                 anchors { top: parent.top; right: parent.right; topMargin: 8; rightMargin: 10 }
@@ -410,7 +337,7 @@ Item {
                           topMargin: 30; leftMargin: 12; rightMargin: 12; bottomMargin: 10 }
                 spacing: 4; clip: true; model: logModel
                 ScrollBar.vertical: ScrollBar {}
-                delegate: TextEdit {  // monospace "ts message", colored by level
+                delegate: TextEdit {
                     width: logList.width
                     text: model.ts + " " + model.msg
                     color: root.levelColor(model.level)

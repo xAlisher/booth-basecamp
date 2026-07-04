@@ -38,9 +38,9 @@ void RadioUiBackend::poll()
     // Async getters — radio_module is a running core with quick getters, so the reply should fire
     // (unlike receiver's reply-gated createNode). If it doesn't, switch to a side channel (fork-tree).
     modules().radio_module.getDeliveryStatusAsync(
-        [this](QString s){ applyDeliveryStatus(s); }, Timeout());
+        [this](QString s){ static int n=0; if (n++ < 3) diag(QStringLiteral("getDeliveryStatus reply #%1: %2").arg(n).arg(s.left(60))); applyDeliveryStatus(s); }, Timeout());
     modules().radio_module.getStreamStatusAsync(
-        [this](QString s){ applyStreamStatus(s); }, Timeout());
+        [this](QString s){ static int m=0; if (m++ < 3) diag(QStringLiteral("getStreamStatus reply #%1: %2").arg(m).arg(s.left(60))); applyStreamStatus(s); }, Timeout());
     modules().radio_module.getStreamCardAsync(
         [this](QString s){ applyStreamCard(s); }, Timeout());
 }

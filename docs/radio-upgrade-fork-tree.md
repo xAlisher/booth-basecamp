@@ -65,3 +65,20 @@ _Status 2026-07-04: Phase 1 shipped (green, committed 1st commit). Phase 2 scaff
   So a universal ui_qml reaching a **legacy core we own** works (codegen reads the dep's Q_INVOKABLE header).
 - **Next:** rewrite Main.qml (callModule → logos.module + PROPs), then standalone headless test (async
   getter reply fires? startStream fire-and-forget brings MediaMTX up?).
+
+## Phase 2 — headless standalone: ✅ GREEN (2026-07-04)
+`nix run .` standalone (bundles host + delivery_module + radio_module + mediamtx). Diag `/tmp/radio-diag.log`:
+```
+onContextReady: modules() wired
+getDeliveryStatus reply #1: (empty — radio_module not ready at t=0)
+getDeliveryStatus reply #2: {"ok":true,"peerId":"","state":"ready"}   ← REAL data
+getStreamStatus  reply #2: {"ok":true,"onion":"","onionReady":false,"privacy":"onion",...}
+```
+- **The async-getter bet holds** — unlike receiver's reply-gated createNode, radio_module's quick getters
+  deliver real async replies; PROPs (deliveryState→ready, streamState, streamPrivacy…) update, QML binds.
+- ui-host `wchan=do_wait` is the host waiting on its child module processes (normal) — NOT a deadlock;
+  the poll keeps firing and returns data. No freeze (State: S, poll alive).
+- **startStream (fire-and-forget → MediaMTX)** not exercised headlessly (needs a UI action) — mirrors the
+  receiver's proven fire-and-forget; will confirm on install/GUI.
+- **Verdict:** universal radio_ui works headlessly — a universal ui_qml reaching a legacy core we own,
+  async getters + fire-and-forget mutators. Option (A) confirmed; option (B) not needed.
