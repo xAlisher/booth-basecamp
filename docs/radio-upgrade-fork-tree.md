@@ -82,3 +82,22 @@ getStreamStatus  reply #2: {"ok":true,"onion":"","onionReady":false,"privacy":"o
   receiver's proven fire-and-forget; will confirm on install/GUI.
 - **Verdict:** universal radio_ui works headlessly — a universal ui_qml reaching a legacy core we own,
   async getters + fire-and-forget mutators. Option (A) confirmed; option (B) not needed.
+
+## Phase 3 — Design-system (#41): ✅ GREEN (2026-07-04)
+- Replaced bespoke palette + Dark*/StatusPill with `import Logos.Theme`/`Logos.Controls`: full
+  `Theme.palette.*` (0 hex), `LogosText`/`LogosButton`/`LogosTextField`, `Theme.typography.*`/`Theme.spacing.*`.
+  Kept custom (Theme-tokened): status pills (multi-state, semantic-coloured) + a `ThemedField` for the
+  readOnly/secret credential fields (LogosTextField's readOnly/echoMode API unproven → avoid the
+  crash-on-unknown gotcha, ds-component-missing-signal-load-crash) + ThemedRadio (no DS radio).
+- **Headless render proof** (`nix run .`): ui-host **ALIVE** through load (a DS type error is spinner→exit),
+  `onContextReady` fired, getStreamStatus/getDeliveryStatus replies return real data, **zero QML/DS errors**.
+  So the DS imports resolve and render in the ui-host, and the universal backend keeps working under the re-skin.
+
+## ✅ ALL PHASES GREEN — summary
+| Phase | Issue | Headless gate |
+|---|---|---|
+| Broadcasting-only | #39 | `nix build` Done; qmllint clean; no listen refs |
+| Universal API | #40 | backend compiles + codegen; standalone async getters return real radio_module state; no deadlock |
+| Design-system | #41 | standalone renders DS; ui-host survives load; data flows |
+
+**Wetware (GUI, can't headless):** the *visual* DS polish (does it look right) + `startStream` fire-and-forget → MediaMTX spin-up (needs a click). Both mirror proven receiver patterns.

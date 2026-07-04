@@ -2,27 +2,16 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// radio_ui — broadcast-only (#39), universal (#40). Listening lives in the Receiver module; this is a
-// focused broadcaster. Data layer is the universal QtRO backend: `logos.module("radio_ui")` exposes
-// PROPs (streamState, deliveryState, streamCardJson, …) mirrored from radio_module, and SLOTs
-// (startStream/stopStream/regenerateKey/regenerateOnion) called via logos.watch(...). No callModule.
-// Dark theme (Phase 3 = design-system). Sandbox rules (qml-sandbox-restrictions) still apply.
+import Logos.Theme      // logos-design-system (native on RC3+ Basecamp) — skill: logos-design-system-adoption
+import Logos.Controls   // LogosText / LogosButton / LogosTextField
+
+// radio_ui — broadcast-only (#39), universal (#40), design-system (#41). A focused broadcaster:
+// data layer is the universal QtRO backend (logos.module("radio_ui") PROPs/SLOTs); visuals are the
+// platform design system (Theme.palette tokens, zero hex; LogosText/LogosButton/LogosTextField).
+// Status pills stay custom (multi-state, semantic-coloured) but adopt Theme tokens + shape.
 Item {
     id: root
     width: 480; height: 640
-
-    // ── Dark palette (keeper/stash) ──────────────────────────────────────────
-    readonly property color bgPrimary:     "#171717"
-    readonly property color bgSecondary:   "#262626"
-    readonly property color bgActive:      "#332A27"
-    readonly property color textPrimary:   "#FFFFFF"
-    readonly property color textSecondary: "#A4A4A4"
-    readonly property color textMuted:     "#5D5D5D"
-    readonly property color accentOrange:  "#FF5000"
-    readonly property color successGreen:  "#22C55E"
-    readonly property color warningYellow: "#F59E0B"
-    readonly property color errorRed:      "#FB3748"
-    readonly property color borderColor:   "#383838"
 
     // ── Universal backend + state bound to its PROPs ───────────────────────────
     readonly property var    backend: logos.module("radio_ui")
@@ -33,11 +22,10 @@ Item {
     readonly property bool    onionReady:    backend ? backend.onionReady    : false
     readonly property string  onionError:    backend ? backend.onionError    : ""
     readonly property string  deliveryState: backend ? backend.deliveryState : "offline"
-    // streamCard: parsed from the streamCardJson PROP ("" = no live card → show the setup form).
     readonly property var     streamCard: (backend && backend.streamCardJson && backend.streamCardJson.length > 0)
                                           ? JSON.parse(backend.streamCardJson) : null
 
-    // ── Backend actions (SLOTs via logos.watch — QtRO transport) ───────────────
+    // ── Backend actions (SLOTs via logos.watch) ────────────────────────────────
     function startStream() {
         var onion = privacyGroup.checkedButton === onionBtn
         var cfg = JSON.stringify({
@@ -50,41 +38,25 @@ Item {
             function(){ logEvent("Stream started: " + nameField.text + (onion ? " · onion" : " · direct"), "success") },
             function(){ logEvent("Couldn't start the stream.", "error") })
     }
-    function stopStream() {
-        logos.watch(backend.stopStream(),
-            function(){ logEvent("Stream stopped", "info") }, function(){})
-    }
-    function regenerateKey() {
-        logos.watch(backend.regenerateKey(),
-            function(){ logEvent("Stream key rotated — re-enter the new key in OBS", "warning") }, function(){})
-    }
-    function regenerateOnion() {
-        logos.watch(backend.regenerateOnion(),
-            function(){ logEvent("Rotating Tor address — listeners will rediscover", "warning") }, function(){})
-    }
+    function stopStream() { logos.watch(backend.stopStream(), function(){ logEvent("Stream stopped", "info") }, function(){}) }
+    function regenerateKey() { logos.watch(backend.regenerateKey(), function(){ logEvent("Stream key rotated — re-enter the new key in OBS", "warning") }, function(){}) }
+    function regenerateOnion() { logos.watch(backend.regenerateOnion(), function(){ logEvent("Rotating Tor address — listeners will rediscover", "warning") }, function(){}) }
 
-    function stateLabel() {
-        if (root.streamPrivacy === "onion" && !root.onionReady
-            && (root.streamState === "live" || root.streamState === "receiving"))
-            return "Publishing over Tor…"
-        return root.streamState === "live" ? "Live (announcing)"
-             : root.streamState === "receiving" ? "Receiving stream…" : "Waiting for OBS…"
-    }
     function deliveryDotColor() {
-        return root.deliveryState === "connected" ? root.successGreen
-             : root.deliveryState === "ready" ? root.warningYellow : root.errorRed
+        return root.deliveryState === "connected" ? Theme.palette.success
+             : root.deliveryState === "ready" ? Theme.palette.warning : Theme.palette.error
     }
     function deliveryLabel() {
         return root.deliveryState === "connected" ? "Announce online"
              : root.deliveryState === "ready" ? "Announce ready" : "Announce offline"
     }
     function obsLive() { return root.streamState === "live" || root.streamState === "receiving" }
-    function obsDotColor() { return obsLive() ? root.successGreen : root.warningYellow }
+    function obsDotColor() { return obsLive() ? Theme.palette.success : Theme.palette.warning }
     function obsLabel() { return obsLive() ? "OBS live" : "Waiting for OBS" }
-    function onionDotColor() { return root.onionError.length > 0 ? root.errorRed : root.onionReady ? root.successGreen : root.warningYellow }
+    function onionDotColor() { return root.onionError.length > 0 ? Theme.palette.error : root.onionReady ? Theme.palette.success : Theme.palette.warning }
     function onionLabel() { return root.onionError.length > 0 ? "Tor error" : root.onionReady ? "Onion ready" : "Publishing over Tor…" }
 
-    // ── Activity log (#12 / #15) ───────────────────────────────────────────────
+    // ── Activity log ───────────────────────────────────────────────────────────
     function ts2(n) { return (n < 10 ? "0" : "") + n }
     function nowTs() { var d = new Date(); return "[" + ts2(d.getHours()) + ":" + ts2(d.getMinutes()) + ":" + ts2(d.getSeconds()) + "]" }
     function logEvent(msg, level) {
@@ -92,10 +64,9 @@ Item {
         if (logModel.count > 100) logModel.remove(0)
         logList.positionViewAtEnd()
     }
-    function levelColor(l) { return l === "success" ? root.successGreen : l === "warning" ? root.warningYellow : l === "error" ? root.errorRed : root.textSecondary }
+    function levelColor(l) { return l === "success" ? Theme.palette.success : l === "warning" ? Theme.palette.warning : l === "error" ? Theme.palette.error : Theme.palette.textSecondary }
     ListModel { id: logModel }
 
-    // Backend pushes human-readable lines via the activity SIGNAL; status transitions fold into the log.
     Connections {
         target: root.backend
         ignoreUnknownSignals: true
@@ -109,93 +80,69 @@ Item {
     function copyText(t) { clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); clipHelper.text = "" }
     TextEdit { id: clipHelper; visible: false }
 
-    // ── Reusable dark controls ───────────────────────────────────────────────
+    // ── Custom controls on Theme tokens (no DS equivalent / need readOnly+echoMode) ──
     component StatusPill: Rectangle {
         id: pill
-        property color dot: root.textMuted
+        property color dot: Theme.palette.textMuted
         property string label: ""
-        height: 28; radius: 14
+        height: 28; radius: Theme.spacing.radiusMedium
         implicitWidth: spRow.implicitWidth + 20
-        color: Qt.rgba(0.149, 0.149, 0.149, 0.85)
-        border.color: root.borderColor; border.width: 1
+        color: Theme.palette.surface
+        border.color: Theme.palette.borderHairline; border.width: 1
         Layout.alignment: Qt.AlignVCenter
         RowLayout {
             id: spRow
             anchors { left: parent.left; leftMargin: 10; verticalCenter: parent.verticalCenter }
             spacing: 6
             Rectangle { implicitWidth: 7; implicitHeight: 7; radius: 4; Layout.alignment: Qt.AlignVCenter; color: pill.dot }
-            Text { text: pill.label; font.pixelSize: 11; color: root.textPrimary }
+            LogosText { text: pill.label; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.text }
         }
     }
-    component DarkButton: Button {
-        id: db
-        contentItem: Text {
-            text: db.text; font.pixelSize: 14
-            color: !db.enabled ? root.textMuted : root.textPrimary
-            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-        }
+    // readOnly/secret-capable field (LogosTextField's readOnly/echoMode API is unproven → Theme-tokened TextField)
+    component ThemedField: TextField {
+        color: Theme.palette.text
+        placeholderTextColor: Theme.palette.textMuted
+        selectionColor: Theme.palette.primary
         background: Rectangle {
-            radius: 6; implicitHeight: 34; implicitWidth: 72
-            color: db.down ? root.bgActive : db.hovered ? "#3a3a3a" : root.bgSecondary
-            border.color: root.borderColor; border.width: 1
-        }
-    }
-    component AccentButton: Button {
-        id: ab
-        contentItem: Text {
-            text: ab.text; font.pixelSize: 14; font.bold: true
-            color: ab.enabled ? "#FFFFFF" : root.textMuted
-            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-        }
-        background: Rectangle {
-            radius: 6; implicitHeight: 34; implicitWidth: 84
-            color: !ab.enabled ? root.bgSecondary : ab.down ? "#CC4000" : root.accentOrange
-        }
-    }
-    component DarkField: TextField {
-        color: root.textPrimary
-        placeholderTextColor: root.textMuted
-        selectionColor: root.accentOrange
-        background: Rectangle {
-            radius: 6; implicitHeight: 34
-            color: root.bgSecondary
-            border.color: parent && parent.activeFocus ? root.accentOrange : root.borderColor
+            radius: Theme.spacing.radiusSmall; implicitHeight: 34
+            color: Theme.palette.surfaceRecessed
+            border.color: parent && parent.activeFocus ? Theme.palette.primary : Theme.palette.borderHairline
             border.width: 1
         }
     }
-    component DarkRadio: RadioButton {
+    component ThemedRadio: RadioButton {
         id: dr
         spacing: 8
-        palette.windowText: root.textPrimary
+        palette.windowText: Theme.palette.text
         indicator: Rectangle {
             implicitWidth: 18; implicitHeight: 18; radius: 9
             x: dr.leftPadding; y: dr.topPadding + (dr.availableHeight - height) / 2
             color: "transparent"; border.width: 2
-            border.color: dr.checked ? root.accentOrange : root.textMuted
+            border.color: dr.checked ? Theme.palette.primary : Theme.palette.textMuted
             Rectangle { anchors.centerIn: parent; width: 8; height: 8; radius: 4
-                color: root.accentOrange; visible: dr.checked }
+                color: Theme.palette.primary; visible: dr.checked }
         }
     }
 
     // ── Background ────────────────────────────────────────────────────────────
-    Rectangle { anchors.fill: parent; color: root.bgPrimary }
+    Rectangle { anchors.fill: parent; color: Theme.palette.background }
 
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
 
-        // ── Header: title (left) + status pills (right) ──────────────────────
+        // ── Header ────────────────────────────────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: 16; Layout.rightMargin: 16; Layout.topMargin: 14; Layout.bottomMargin: 6
             spacing: 8
             ColumnLayout {
                 spacing: 1
-                Label { text: "Radio"; color: root.textPrimary; font.pixelSize: 22; font.bold: true }
-                Label { text: "Decentralized broadcast"; color: root.textSecondary; font.pixelSize: 11 }
+                LogosText { text: "Radio"; color: Theme.palette.text; font.pixelSize: Theme.typography.panelTitleText; font.weight: Theme.typography.weightBold }
+                LogosText { text: "Decentralized broadcast"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
             }
             Item { Layout.fillWidth: true }
-            RowLayout {  // status pills (#15): Announce · OBS · Onion
+            RowLayout {
                 spacing: 8
                 Layout.alignment: Qt.AlignVCenter
                 StatusPill { dot: root.deliveryDotColor(); label: root.deliveryLabel() }
@@ -205,9 +152,9 @@ Item {
             }
         }
 
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.borderColor; Layout.topMargin: 6 }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.palette.borderHairline; Layout.topMargin: 6 }
 
-        // ── Broadcast body (single view) ──────────────────────────────────────
+        // ── Broadcast body ────────────────────────────────────────────────────
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true
             ColumnLayout {
@@ -217,41 +164,41 @@ Item {
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 10
                     visible: root.streamCard === null
-                    Label { text: "Station name"; color: root.textSecondary; font.pixelSize: 12 }
-                    DarkField { id: nameField; Layout.fillWidth: true; placeholderText: "What listeners see"; text: "My Station" }
-                    Label { text: "Visibility"; color: root.textSecondary; font.pixelSize: 12 }
+                    LogosText { text: "Station name"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                    LogosTextField { id: nameField; Layout.fillWidth: true; placeholderText: "What listeners see"; text: "My Station" }
+                    LogosText { text: "Visibility"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
                     RowLayout {
                         spacing: 16
                         ButtonGroup { id: visGroup }
-                        DarkRadio { id: publicBtn;  text: "Public";  checked: true; ButtonGroup.group: visGroup }
-                        DarkRadio { id: privateBtn; text: "Private"; ButtonGroup.group: visGroup }
+                        ThemedRadio { id: publicBtn;  text: "Public";  checked: true; ButtonGroup.group: visGroup }
+                        ThemedRadio { id: privateBtn; text: "Private"; ButtonGroup.group: visGroup }
                     }
-                    Label { text: "Privacy"; color: root.textSecondary; font.pixelSize: 12 }
+                    LogosText { text: "Privacy"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
                     RowLayout {
                         spacing: 16
                         ButtonGroup { id: privacyGroup }
-                        DarkRadio { id: onionBtn;  text: "Onion (Tor)";  checked: true; ButtonGroup.group: privacyGroup }
-                        DarkRadio { id: directBtn; text: "Direct (LAN)"; ButtonGroup.group: privacyGroup }
+                        ThemedRadio { id: onionBtn;  text: "Onion (Tor)";  checked: true; ButtonGroup.group: privacyGroup }
+                        ThemedRadio { id: directBtn; text: "Direct (LAN)"; ButtonGroup.group: privacyGroup }
                     }
-                    Label {
-                        Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: 11
-                        color: privacyGroup.checkedButton === onionBtn ? root.textMuted : root.warningYellow
+                    LogosText {
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: Theme.typography.secondaryText
+                        color: privacyGroup.checkedButton === onionBtn ? Theme.palette.textMuted : Theme.palette.warning
                         text: privacyGroup.checkedButton === onionBtn
                             ? "🧅 Listeners reach you over Tor — your IP stays hidden and it works through NAT (no port-forwarding). First connect is slower."
                             : "⚠ Direct mode is LAN-only and exposes your IP to listeners. Use it only for local/low-latency streams."
                     }
-                    Label { text: "Description (optional)"; color: root.textSecondary; font.pixelSize: 12 }
-                    DarkField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
-                    AccentButton { text: "Start"; enabled: root.ready && nameField.text.length > 0; onClicked: root.startStream() }
+                    LogosText { text: "Description (optional)"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                    LogosTextField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
+                    LogosButton { text: "Start"; enabled: root.ready && nameField.text.length > 0; onClicked: root.startStream() }
                 }
 
-                // Stream-credentials card
+                // credentials card
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 10
                     visible: root.streamCard !== null
-                    Label { text: "Stream credentials"; color: root.textPrimary; font.pixelSize: 16; font.bold: true }
-                    Label {
-                        Layout.fillWidth: true; wrapMode: Text.WordWrap; color: root.textSecondary; font.pixelSize: 12
+                    LogosText { text: "Stream credentials"; color: Theme.palette.text; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightBold }
+                    LogosText {
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText
                         text: "In OBS → Settings → Stream: set Service to “Custom…”, paste the RTMP Server and Stream Key below, then Start Streaming. The key is secret — don't share it."
                     }
                     component CopyRow: RowLayout {
@@ -263,14 +210,14 @@ Item {
                         property bool canRegen: false
                         signal regen()
                         Layout.fillWidth: true; spacing: 8
-                        Label { text: cr.label; color: root.textSecondary; Layout.preferredWidth: 90; font.pixelSize: 12 }
-                        DarkField {
+                        LogosText { text: cr.label; color: Theme.palette.textSecondary; Layout.preferredWidth: 90; font.pixelSize: Theme.typography.secondaryText }
+                        ThemedField {
                             Layout.fillWidth: true; readOnly: true; text: cr.value
                             echoMode: (cr.secret && !cr.revealed) ? TextInput.Password : TextInput.Normal
                         }
-                        DarkButton { visible: cr.secret; text: cr.revealed ? "Hide" : "Show"; onClicked: cr.revealed = !cr.revealed }
-                        DarkButton { visible: cr.canRegen; text: "⟳ New"; onClicked: cr.regen() }
-                        DarkButton { text: "Copy"; onClicked: root.copyText(cr.value) }
+                        LogosButton { visible: cr.secret; text: cr.revealed ? "Hide" : "Show"; implicitWidth: 56; onClicked: cr.revealed = !cr.revealed }
+                        LogosButton { visible: cr.canRegen; text: "⟳ New"; implicitWidth: 64; onClicked: cr.regen() }
+                        LogosButton { text: "Copy"; implicitWidth: 56; onClicked: root.copyText(cr.value) }
                     }
                     CopyRow { label: "RTMP Server"; value: root.streamCard ? root.streamCard.rtmpUrl : "" }
                     CopyRow {
@@ -281,37 +228,37 @@ Item {
                     RowLayout {
                         visible: root.streamPrivacy === "onion"
                         Layout.fillWidth: true; spacing: 8
-                        Label { text: "Tor address"; color: root.textSecondary; Layout.preferredWidth: 90; font.pixelSize: 12 }
-                        Label {
-                            Layout.fillWidth: true; font.pixelSize: 11; color: root.textMuted; elide: Text.ElideRight
+                        LogosText { text: "Tor address"; color: Theme.palette.textSecondary; Layout.preferredWidth: 90; font.pixelSize: Theme.typography.secondaryText }
+                        LogosText {
+                            Layout.fillWidth: true; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textMuted; elide: Text.ElideRight
                             text: root.onionReady ? "stable · persists across restarts" : "publishing…"
                         }
-                        DarkButton { text: "⟳ New address"; onClicked: root.regenerateOnion() }
+                        LogosButton { text: "⟳ New address"; implicitWidth: 120; onClicked: root.regenerateOnion() }
                     }
-                    DarkButton { text: "Stop"; onClicked: root.stopStream() }
+                    LogosButton { text: "Stop"; onClicked: root.stopStream() }
                 }
                 Item { Layout.fillHeight: true }
             }
         }
 
-        // ── Activity log (#12) ────────────────────────────────────────────────
+        // ── Activity log ──────────────────────────────────────────────────────
         Rectangle {
             Layout.fillWidth: true; Layout.leftMargin: 16; Layout.rightMargin: 16; Layout.bottomMargin: 10
             Layout.preferredHeight: 172
-            color: root.bgSecondary; radius: 6
+            color: Theme.palette.surface; radius: Theme.spacing.radiusMedium
 
             Rectangle {
                 anchors { top: parent.top; left: parent.left; right: parent.right }
-                height: 1; color: root.borderColor
+                height: 1; color: Theme.palette.borderHairline
             }
-            Text { anchors { top: parent.top; left: parent.left; topMargin: 8; leftMargin: 12 }
-                   text: "Activity"; color: root.textSecondary; font.pixelSize: 12; font.bold: true }
+            LogosText { anchors { top: parent.top; left: parent.left; topMargin: 8; leftMargin: 12 }
+                   text: "Activity"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText; font.weight: Theme.typography.weightBold }
 
             Rectangle {
                 visible: logModel.count > 0
                 anchors { top: parent.top; right: copyBtn.left; topMargin: 8; rightMargin: 10 }
                 width: 18; height: 18; color: "transparent"; opacity: clearArea.containsMouse ? 0.9 : 0.45
-                Text { anchors.centerIn: parent; text: "✕"; color: root.textMuted; font.pixelSize: 13 }
+                LogosText { anchors.centerIn: parent; text: "✕"; color: Theme.palette.textMuted; font.pixelSize: 13 }
                 MouseArea { id: clearArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: logModel.clear() }
                 ToolTip { visible: clearArea.containsMouse; text: "Clear"; delay: 500 }
             }
@@ -320,8 +267,8 @@ Item {
                 anchors { top: parent.top; right: parent.right; topMargin: 8; rightMargin: 10 }
                 width: 20; height: 20; color: "transparent"; opacity: copyArea.containsMouse ? 0.9 : 0.5
                 Behavior on opacity { NumberAnimation { duration: 150 } }
-                Rectangle { x: 3; y: 6; width: 10; height: 10; color: "transparent"; border.color: root.textMuted; border.width: 1; radius: 2 }
-                Rectangle { x: 6; y: 3; width: 10; height: 10; color: root.bgSecondary; border.color: root.textMuted; border.width: 1; radius: 2 }
+                Rectangle { x: 3; y: 6; width: 10; height: 10; color: "transparent"; border.color: Theme.palette.textMuted; border.width: 1; radius: 2 }
+                Rectangle { x: 6; y: 3; width: 10; height: 10; color: Theme.palette.surface; border.color: Theme.palette.textMuted; border.width: 1; radius: 2 }
                 MouseArea {
                     id: copyArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                     onClicked: { var s = ""; for (var i = 0; i < logModel.count; i++) { var e = logModel.get(i); s += e.ts + " " + e.msg + "\n" }
@@ -346,8 +293,8 @@ Item {
                     readOnly: true; selectByMouse: true; selectByKeyboard: true
                 }
             }
-            Text { visible: logModel.count === 0; anchors.centerIn: parent
-                   text: "No activity yet"; color: root.textMuted; font.pixelSize: 11 }
+            LogosText { visible: logModel.count === 0; anchors.centerIn: parent
+                   text: "No activity yet"; color: Theme.palette.textMuted; font.pixelSize: Theme.typography.secondaryText }
         }
     }
 }
