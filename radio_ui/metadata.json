@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "type": "ui_qml",
   "interface": "universal",
+  "main": "radio_ui_plugin",
   "view": "Main.qml",
   "icon": "icons/radio.png",
   "category": "media",

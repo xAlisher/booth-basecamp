@@ -38,11 +38,11 @@ void RadioUiBackend::poll()
     // Async getters — radio_module is a running core with quick getters, so the reply should fire
     // (unlike receiver's reply-gated createNode). If it doesn't, switch to a side channel (fork-tree).
     modules().radio_module.getDeliveryStatusAsync(
-        [this](LogosResult r){ if (r.success) applyDeliveryStatus(r.getString()); }, Timeout());
+        [this](QString s){ applyDeliveryStatus(s); }, Timeout());
     modules().radio_module.getStreamStatusAsync(
-        [this](LogosResult r){ if (r.success) applyStreamStatus(r.getString()); }, Timeout());
+        [this](QString s){ applyStreamStatus(s); }, Timeout());
     modules().radio_module.getStreamCardAsync(
-        [this](LogosResult r){ if (r.success) applyStreamCard(r.getString()); }, Timeout());
+        [this](QString s){ applyStreamCard(s); }, Timeout());
 }
 
 void RadioUiBackend::applyDeliveryStatus(const QString& json)
@@ -75,8 +75,8 @@ QString RadioUiBackend::startStream(QString configJson)
     if (!isContextReady()) return QStringLiteral("{\"ok\":false,\"error\":\"context_not_ready\"}");
     diag(QStringLiteral("startStream: fire-and-forget (spawns MediaMTX)"));
     modules().radio_module.startStreamAsync(configJson,
-        [this](LogosResult r){ diag(QStringLiteral("startStream cb ok=%1").arg(r.success));
-                               if (r.success) emit activity(QStringLiteral("Stream started")); }, Timeout());
+        [this](QString){ diag(QStringLiteral("startStream cb fired"));
+                         emit activity(QStringLiteral("Stream started")); }, Timeout());
     emit activity(QStringLiteral("Starting stream…"));
     return QStringLiteral("{\"ok\":true}");
 }
@@ -84,7 +84,7 @@ QString RadioUiBackend::startStream(QString configJson)
 QString RadioUiBackend::stopStream()
 {
     if (!isContextReady()) return QStringLiteral("{\"ok\":false,\"error\":\"context_not_ready\"}");
-    modules().radio_module.stopStreamAsync([this](LogosResult){ }, Timeout());
+    modules().radio_module.stopStreamAsync([](QString){ }, Timeout());
     setStreamCardJson(QString());
     emit activity(QStringLiteral("Stream stopped"));
     return QStringLiteral("{\"ok\":true}");
@@ -94,7 +94,7 @@ QString RadioUiBackend::regenerateKey()
 {
     if (!isContextReady()) return QStringLiteral("{\"ok\":false,\"error\":\"context_not_ready\"}");
     modules().radio_module.regenerateKeyAsync(
-        [this](LogosResult){ emit activity(QStringLiteral("Stream key rotated — re-enter it in OBS")); }, Timeout());
+        [this](QString){ emit activity(QStringLiteral("Stream key rotated — re-enter it in OBS")); }, Timeout());
     return QStringLiteral("{\"ok\":true}");
 }
 
@@ -103,7 +103,7 @@ QString RadioUiBackend::regenerateOnion()
     if (!isContextReady()) return QStringLiteral("{\"ok\":false,\"error\":\"context_not_ready\"}");
     diag(QStringLiteral("regenerateOnion: fire-and-forget (spawns tor)"));
     modules().radio_module.regenerateOnionAsync(
-        [this](LogosResult){ emit activity(QStringLiteral("Rotating Tor address — listeners will rediscover")); }, Timeout());
+        [this](QString){ emit activity(QStringLiteral("Rotating Tor address — listeners will rediscover")); }, Timeout());
     setOnionReady(false); setOnionAddr(QString());
     return QStringLiteral("{\"ok\":true}");
 }

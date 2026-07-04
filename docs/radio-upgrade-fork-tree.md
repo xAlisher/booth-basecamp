@@ -52,3 +52,16 @@ radio_ui is pure-QML today (no src/). Add the universal QtRO backend (thin forwa
 3. If async getter reply doesn't fire (receiver Node-6 wall) → fire-and-forget + poll radio_module via a side channel, OR reconsider option (B).
 
 _Status 2026-07-04: Phase 1 shipped (green, committed 1st commit). Phase 2 scaffold specified; not yet written/built — it's the receiver-scale headless push (deadlock investigation)._
+
+## Phase 2 — build gate: ✅ GREEN (2026-07-04)
+- **Two walls cleared:**
+  1. **`"main"` field gates the backend.** `mkLogosQmlModule.nix` line 53: `hasBackend = config.main != null`.
+     Without `"main": "radio_ui_plugin"` in metadata.json, the builder goes QML-only ("Copied QML entry
+     file") and never compiles the backend/codegen — regardless of `.rep`/CMakeLists/`interface`. Added it.
+  2. **radio_module's async callback is `std::function<void(QString)>`** (the return value directly), NOT
+     `void(LogosResult)` like delivery_module. Fixed all 5 callbacks: `[this](QString s){ applyX(s); }`.
+- **Result:** `Linking radio_ui_plugin.so`, codegen `Generated: radio_module_api.h/.cpp` from
+  radio_module's `radio_interface.h`, `rep_radio_ui_source.h` generated, `Done: logos-radio_ui-module.lgx`.
+  So a universal ui_qml reaching a **legacy core we own** works (codegen reads the dep's Q_INVOKABLE header).
+- **Next:** rewrite Main.qml (callModule → logos.module + PROPs), then standalone headless test (async
+  getter reply fires? startStream fire-and-forget brings MediaMTX up?).
