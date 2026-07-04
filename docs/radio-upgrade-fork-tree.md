@@ -33,3 +33,22 @@ Two live options for how `radio_module` (legacy core) is reached from a universa
 ## Headless test plan
 `nix build .#lgx-portable` (radio_ui + radio_module) green; standalone `nix run` brings up the broadcaster
 (MediaMTX spawns, stream key mints, delivery announces) without the Listen path. Diag to a file trail.
+
+## Phase 2 — concrete scaffold plan (turnkey, from receiver templates)
+radio_ui is pure-QML today (no src/). Add the universal QtRO backend (thin forwarder → modules().radio_module):
+- **metadata.json:** add `"interface":"universal"`, `"codegen":{"rep":"src/radio_ui.rep"}` (keep `view:"Main.qml"`, deps `["radio_module"]`).
+- **src/radio_ui.rep:** PROPs the QML binds (streamState, streamPrivacy, onionAddr, onionReady, onionError, deliveryState, streamCardJson, lastError) + SIGNAL(activity) + SLOTs (startStream(QString), stopStream(), regenerateKey(), regenerateOnion()).
+- **src/radio_ui_backend.{h,cpp}:** `RadioUiBackend : RadioUiSimpleSource, LogosUiPluginContext`. `onContextReady()` → 1.5s poll timer.
+  - **Getters** (getStreamStatus/getDeliveryStatus/getStreamCard) → **async** (`*Async` + callback updates PROPs). radio_module is an already-running core with quick getters, so the async reply should fire (unlike receiver's gated createNode) — but this is the headless bet to verify first (trivial-experiment).
+  - **Mutators that spawn subprocesses** (startStream→MediaMTX, regenerateOnion→tor) → **fire-and-forget async** (receiver#20 lesson: sync would deadlock the ui-host loop). stopStream/regenerateKey likely safe but keep async for consistency.
+- **CMakeLists.txt:** SOURCES src/radio_ui_backend.{h,cpp}; INCLUDE_DIRS src.
+- **flake.nix:** already newest builder + radio_module path input — no change (radio_module's radio_interface.h Q_INVOKABLE surface is what codegen reads for modules().radio_module).
+- **Main.qml:** `logos.callModule("radio_module",m,a)` → `logos.module("radio_ui")` backend: bind PROPs (streamState etc.) instead of the getStreamStatus/getDeliveryStatus poll Timers; call SLOTs via `logos.watch(backend.startStream(cfg), ok, err)`. Drop callParse/call; keep the activity log fed by the `activity` SIGNAL + PROP-change handlers.
+- **radio_module trim (optional, Phase 2b):** remove the listener Q_INVOKABLEs (startDiscovery/play/stop/setVolume/setListenBuffer/addTopic/getStations) from radio_interface.h + radio_plugin — pure broadcaster core. Risky (core rebuild) → separate commit, headless-verify.
+
+### Headless test gate (must be green before merge)
+1. `nix build .#lgx-portable` (radio_ui) — backend compiles + codegen emits modules().radio_module. 
+2. Standalone `nix run` (or install+launch) — backend onContextReady wires; getStreamStatus async reply updates streamState PROP (diag trail); startStream fire-and-forget brings MediaMTX up server-side (radio_module logs "mediamtx"), streamCardJson PROP populates. No ui-host freeze (State: S, /proc/wchan not do_wait-stuck).
+3. If async getter reply doesn't fire (receiver Node-6 wall) → fire-and-forget + poll radio_module via a side channel, OR reconsider option (B).
+
+_Status 2026-07-04: Phase 1 shipped (green, committed 1st commit). Phase 2 scaffold specified; not yet written/built — it's the receiver-scale headless push (deadlock investigation)._
