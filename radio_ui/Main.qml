@@ -2,8 +2,9 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// radio_ui — dark theme, matching keeper/stash/beacon (palette + header title + dependency
-// status pill on the right). Logic lives in radio_module (the QML sandbox blocks network/
+// radio_ui — broadcast-only (#39). Listening now lives in the Receiver module; this is a focused
+// broadcaster: set up a station, hand OBS the RTMP creds, announce over delivery (direct or .onion).
+// Dark theme matching keeper/stash/beacon. Logic lives in radio_module (the QML sandbox blocks network/
 // subprocess). Sandbox rules (qml-sandbox-restrictions): no QtMultimedia/QtGraphicalEffects/
 // QtQuick.Shapes/FileDialog/network/Qt.openUrlExternally. Inside layouts use implicitHeight.
 Item {
@@ -23,19 +24,14 @@ Item {
     readonly property color errorRed:      "#FB3748"
     readonly property color borderColor:   "#383838"
 
-    // ── State ────────────────────────────────────────────────────────────────
+    // ── State (broadcast only) ─────────────────────────────────────────────────
     property var    streamCard:   null
     property string streamState:  "idle"
     property string streamPrivacy: "public"   // public | onion (this host's broadcast)
-    property int    listenBuffer:  8           // #17 listener jitter buffer (seconds)
     property string onionAddr:    ""          // our .onion once published (onion mode)
     property bool   onionReady:   false        // hidden-service descriptor published → reachable
     property string onionError:   ""           // non-empty → Tor setup failed/timed out
-    property var    stations:     []
-    property string playingName:  ""
-    property bool   discoveryStarted: false
-    property int    volume:       75
-    property string deliveryState: "offline"   // offline | ready | connected
+    property string deliveryState: "offline"   // offline | ready | connected (announce path)
     property string deliveryPeerId: ""
 
     // ── Backend bridge ───────────────────────────────────────────────────────
@@ -54,13 +50,8 @@ Item {
             "mediamtx_spawn_failed": "Couldn't start the broadcast server.",
             "mediamtx_port_or_config": "Broadcast server failed to start — a port may already be in use.",
             "config_write_failed": "Couldn't write the broadcast server config.",
-            "ffplay_not_found": "Playback unavailable — ffplay (ffmpeg) is missing.",
-            "ffplay_failed": "Couldn't start playback for that station.",
-            "unsafe_url": "That station's URL is not a safe http(s) stream.",
-            "no_url": "That station didn't provide a stream URL.",
-            "no_delivery_client": "Discovery service (delivery_module) is unavailable.",
-            "invalid_topic": "That topic isn't valid (use /path/like/this).",
-            "discovery_not_started": "Open the Listen tab to start discovery first."
+            "no_delivery_client": "Announce service (delivery_module) is unavailable.",
+            "invalid_topic": "That topic isn't valid (use /path/like/this)."
         }
         return m[code] || ("Something went wrong (" + code + ").")
     }
@@ -100,15 +91,6 @@ Item {
             logEvent("Resumed stream after restart: " + (c.name || ""), "success")
         }
     }
-    function playStation(s) {
-        var r = root.call("play", [s.streamUrl, s.name || ""])
-        if (r && r.ok) root.playingName = s.name || s.path
-    }
-    function uptime(ms) {
-        if (!ms) return ""
-        var sec = Math.floor((Date.now() - ms) / 1000)
-        return sec < 60 ? sec + "s" : sec < 3600 ? Math.floor(sec/60) + "m" : Math.floor(sec/3600) + "h"
-    }
     function stateLabel() {
         // In onion mode the announce is held until the Tor descriptor publishes (~30–60s).
         if (root.streamPrivacy === "onion" && !root.onionReady
@@ -126,8 +108,8 @@ Item {
              : root.deliveryState === "ready" ? root.warningYellow : root.errorRed
     }
     function deliveryLabel() {
-        return root.deliveryState === "connected" ? "Discovery online"
-             : root.deliveryState === "ready" ? "Discovery ready" : "Discovery offline"
+        return root.deliveryState === "connected" ? "Announce online"
+             : root.deliveryState === "ready" ? "Announce ready" : "Announce offline"
     }
     // OBS pill (#15) — visible while streaming
     function obsLive() { return root.streamState === "live" || root.streamState === "receiving" }
@@ -154,7 +136,6 @@ Item {
     onOnionReadyChanged: if (onionReady) logEvent("Onion ready · " + onionAddr, "success")   // the tor link
     onOnionErrorChanged: if (onionError.length > 0) logEvent("Tor: " + onionError, "error")
     onOnionAddrChanged: if (onionAddr.length > 0 && !onionReady) logEvent("Tor: publishing descriptor…", "warning")
-    onPlayingNameChanged: logEvent(playingName.length > 0 ? "▶ Playing " + playingName : "■ Stopped playback", "info")
 
     function copyText(t) { clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); clipHelper.text = "" }
     TextEdit { id: clipHelper; visible: false }
@@ -184,18 +165,6 @@ Item {
                 if (r.onion !== undefined) root.onionAddr = r.onion
                 if (r.onionReady !== undefined) root.onionReady = r.onionReady
                 root.onionError = r.onionError || "" }
-        }
-    }
-    Timer {  // live directory while on the Listen tab (#9)
-        interval: 2000; repeat: true; running: tabs.currentIndex === 1
-        onTriggered: { var r = root.callParse("getStations", []); if (r && r.ok) root.stations = r.stations || [] }
-    }
-    Connections {
-        target: tabs
-        function onCurrentIndexChanged() {
-            if (tabs.currentIndex === 1 && !root.discoveryStarted) {
-                root.call("startDiscovery", []); root.discoveryStarted = true
-            }
         }
     }
 
@@ -275,7 +244,7 @@ Item {
         anchors.fill: parent
         spacing: 0
 
-        // ── Header: title (left) + delivery status pill (right) ──────────────
+        // ── Header: title (left) + status pills (right) ──────────────────────
         RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: 16; Layout.rightMargin: 16; Layout.topMargin: 14; Layout.bottomMargin: 6
@@ -283,10 +252,10 @@ Item {
             ColumnLayout {
                 spacing: 1
                 Label { text: "Radio"; color: root.textPrimary; font.pixelSize: 22; font.bold: true }
-                Label { text: "Decentralized broadcast & discovery"; color: root.textSecondary; font.pixelSize: 11 }
+                Label { text: "Decentralized broadcast"; color: root.textSecondary; font.pixelSize: 11 }
             }
             Item { Layout.fillWidth: true }
-            RowLayout {  // status pills (#15): Discovery · OBS · Onion
+            RowLayout {  // status pills (#15): Announce · OBS · Onion
                 spacing: 8
                 Layout.alignment: Qt.AlignVCenter
                 StatusPill { dot: root.deliveryDotColor(); label: root.deliveryLabel() }
@@ -296,203 +265,102 @@ Item {
             }
         }
 
-        // No error banner — all errors go to the activity log (#12).
+        Rectangle { Layout.fillWidth: true; height: 1; color: root.borderColor; Layout.topMargin: 6 }
 
-        // ── Tabs ──────────────────────────────────────────────────────────────
-        TabBar {
-            id: tabs
-            Layout.fillWidth: true
-            Layout.topMargin: 6
-            background: Rectangle { color: "transparent" }
-            component DarkTab: TabButton {
-                id: tb
-                contentItem: Text {
-                    text: tb.text; font.pixelSize: 15; font.bold: tb.checked
-                    color: tb.checked ? root.textPrimary : root.textSecondary
-                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle {
-                    color: "transparent"
-                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2
-                        color: tb.checked ? root.accentOrange : "transparent" }
-                }
-            }
-            DarkTab { text: "Stream" }
-            DarkTab { text: "Listen" }
-        }
-        Rectangle { Layout.fillWidth: true; height: 1; color: root.borderColor }
-
-        StackLayout {
+        // ── Broadcast body (single view — no tabs since listening moved to Receiver) ──
+        Item {
             Layout.fillWidth: true; Layout.fillHeight: true
-            currentIndex: tabs.currentIndex
+            ColumnLayout {
+                anchors.fill: parent; anchors.margins: 16; spacing: 12
 
-            // ── Stream tab ────────────────────────────────────────────────────
-            Item {
+                // setup form
                 ColumnLayout {
-                    anchors.fill: parent; anchors.margins: 16; spacing: 12
-
-                    // setup form
-                    ColumnLayout {
-                        Layout.fillWidth: true; spacing: 10
-                        visible: root.streamCard === null
-                        Label { text: "Station name"; color: root.textSecondary; font.pixelSize: 12 }
-                        DarkField { id: nameField; Layout.fillWidth: true; placeholderText: "What listeners see"; text: "My Station" }
-                        Label { text: "Visibility"; color: root.textSecondary; font.pixelSize: 12 }
-                        RowLayout {
-                            spacing: 16
-                            ButtonGroup { id: visGroup }
-                            DarkRadio { id: publicBtn;  text: "Public";  checked: true; ButtonGroup.group: visGroup }
-                            DarkRadio { id: privateBtn; text: "Private"; ButtonGroup.group: visGroup }
-                        }
-                        Label { text: "Privacy"; color: root.textSecondary; font.pixelSize: 12 }
-                        RowLayout {
-                            spacing: 16
-                            ButtonGroup { id: privacyGroup }
-                            // Onion is the default — internet radio shouldn't be LAN-only or leak the host IP.
-                            DarkRadio { id: onionBtn;  text: "Onion (Tor)";  checked: true; ButtonGroup.group: privacyGroup }
-                            DarkRadio { id: directBtn; text: "Direct (LAN)"; ButtonGroup.group: privacyGroup }
-                        }
-                        Label {
-                            Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: 11
-                            color: privacyGroup.checkedButton === onionBtn ? root.textMuted : root.warningYellow
-                            text: privacyGroup.checkedButton === onionBtn
-                                ? "🧅 Listeners reach you over Tor — your IP stays hidden and it works through NAT (no port-forwarding). First connect is slower."
-                                : "⚠ Direct mode is LAN-only and exposes your IP to listeners. Use it only for local/low-latency streams."
-                        }
-                        Label { text: "Description (optional)"; color: root.textSecondary; font.pixelSize: 12 }
-                        DarkField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
-                        AccentButton { text: "Start"; enabled: nameField.text.length > 0; onClicked: root.startStream() }
+                    Layout.fillWidth: true; spacing: 10
+                    visible: root.streamCard === null
+                    Label { text: "Station name"; color: root.textSecondary; font.pixelSize: 12 }
+                    DarkField { id: nameField; Layout.fillWidth: true; placeholderText: "What listeners see"; text: "My Station" }
+                    Label { text: "Visibility"; color: root.textSecondary; font.pixelSize: 12 }
+                    RowLayout {
+                        spacing: 16
+                        ButtonGroup { id: visGroup }
+                        DarkRadio { id: publicBtn;  text: "Public";  checked: true; ButtonGroup.group: visGroup }
+                        DarkRadio { id: privateBtn; text: "Private"; ButtonGroup.group: visGroup }
                     }
-
-                    // Stream-credentials card — live status is in the header pills (OBS / Onion);
-                    // every state change + the .onion link land in the activity log.
-                    ColumnLayout {
-                        Layout.fillWidth: true; spacing: 10
-                        visible: root.streamCard !== null
-                        Label { text: "Stream credentials"; color: root.textPrimary; font.pixelSize: 16; font.bold: true }
-                        Label {
-                            Layout.fillWidth: true; wrapMode: Text.WordWrap; color: root.textSecondary; font.pixelSize: 12
-                            text: "In OBS → Settings → Stream: set Service to “Custom…”, paste the RTMP Server and Stream Key below, then Start Streaming. The key is secret — don't share it."
-                        }
-                        component CopyRow: RowLayout {
-                            id: cr
-                            property string label: ""
-                            property string value: ""
-                            property bool secret: false   // masked with dots (safe for screenshots)
-                            property bool revealed: false
-                            property bool canRegen: false
-                            signal regen()
-                            Layout.fillWidth: true; spacing: 8
-                            Label { text: cr.label; color: root.textSecondary; Layout.preferredWidth: 90; font.pixelSize: 12 }
-                            DarkField {
-                                Layout.fillWidth: true; readOnly: true; text: cr.value
-                                echoMode: (cr.secret && !cr.revealed) ? TextInput.Password : TextInput.Normal
-                            }
-                            DarkButton { visible: cr.secret; text: cr.revealed ? "Hide" : "Show"; onClicked: cr.revealed = !cr.revealed }
-                            DarkButton { visible: cr.canRegen; text: "⟳ New"; onClicked: cr.regen() }   // #17 rotate key
-                            DarkButton { text: "Copy"; onClicked: root.copyText(cr.value) }   // copies the real value
-                        }
-                        CopyRow { label: "RTMP Server"; value: root.streamCard ? root.streamCard.rtmpUrl : "" }
-                        CopyRow {
-                            label: "Stream Key"; value: root.streamCard ? root.streamCard.streamKey : ""
-                            secret: true; canRegen: true
-                            onRegen: {  // #17 rotate the publish key (revokes the old OBS key)
-                                var r = root.callParse("regenerateKey", [])
-                                if (r && r.ok) { root.streamCard = r
-                                    logEvent("Stream key rotated — re-enter the new key in OBS", "warning") }
-                            }
-                        }
-                        RowLayout {  // #17 Tor address persists across restarts; rotate on demand
-                            visible: root.streamPrivacy === "onion"
-                            Layout.fillWidth: true; spacing: 8
-                            Label { text: "Tor address"; color: root.textSecondary; Layout.preferredWidth: 90; font.pixelSize: 12 }
-                            Label {
-                                Layout.fillWidth: true; font.pixelSize: 11; color: root.textMuted; elide: Text.ElideRight
-                                text: root.onionReady ? "stable · persists across restarts" : "publishing…"
-                            }
-                            DarkButton { text: "⟳ New address"; onClicked: {  // rotate the .onion identity
-                                var r = root.callParse("regenerateOnion", [])
-                                if (r && r.ok) { root.onionReady = false; root.onionAddr = ""
-                                    logEvent("Rotating Tor address — listeners will rediscover", "warning") }
-                            } }
-                        }
-                        DarkButton { text: "Stop"; onClicked: root.stopStream() }
+                    Label { text: "Privacy"; color: root.textSecondary; font.pixelSize: 12 }
+                    RowLayout {
+                        spacing: 16
+                        ButtonGroup { id: privacyGroup }
+                        // Onion is the default — internet radio shouldn't be LAN-only or leak the host IP.
+                        DarkRadio { id: onionBtn;  text: "Onion (Tor)";  checked: true; ButtonGroup.group: privacyGroup }
+                        DarkRadio { id: directBtn; text: "Direct (LAN)"; ButtonGroup.group: privacyGroup }
                     }
-                    Item { Layout.fillHeight: true }
+                    Label {
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: 11
+                        color: privacyGroup.checkedButton === onionBtn ? root.textMuted : root.warningYellow
+                        text: privacyGroup.checkedButton === onionBtn
+                            ? "🧅 Listeners reach you over Tor — your IP stays hidden and it works through NAT (no port-forwarding). First connect is slower."
+                            : "⚠ Direct mode is LAN-only and exposes your IP to listeners. Use it only for local/low-latency streams."
+                    }
+                    Label { text: "Description (optional)"; color: root.textSecondary; font.pixelSize: 12 }
+                    DarkField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
+                    AccentButton { text: "Start"; enabled: nameField.text.length > 0; onClicked: root.startStream() }
                 }
-            }
 
-            // ── Listen tab ────────────────────────────────────────────────────
-            Item {
+                // Stream-credentials card — live status is in the header pills (OBS / Onion);
+                // every state change + the .onion link land in the activity log.
                 ColumnLayout {
-                    anchors.fill: parent; anchors.margins: 16; spacing: 12
-
-                    ListView {
-                        id: stationList
-                        Layout.fillWidth: true; Layout.fillHeight: true
-                        clip: true; spacing: 6
-                        model: root.stations
-                        delegate: ItemDelegate {
-                            required property var modelData
-                            width: ListView.view ? ListView.view.width : 0
-                            onClicked: root.playStation(modelData)
-                            background: Rectangle { color: parent.hovered ? root.bgSecondary : "transparent"; radius: 6 }
-                            contentItem: ColumnLayout {
-                                spacing: 2
-                                RowLayout {
-                                    spacing: 6
-                                    Label { text: modelData.name || "Unknown"; color: root.textPrimary; font.bold: true }
-                                    Label {  // over-Tor badge — backend-computed flag (Senty ISSUE-1),
-                                             // consistent with playback routing; not a spoofable substring
-                                        visible: modelData._onion === true
-                                        text: "🧅 Tor"; color: root.warningYellow; font.pixelSize: 10; font.bold: true
-                                    }
-                                }
-                                Label { text: (modelData.host || "") + " · " + root.uptime(modelData.startedAt)
-                                        color: root.textSecondary; font.pixelSize: 12 }
-                                Label {  // #13 — station description
-                                    visible: (modelData.description || "").length > 0
-                                    text: modelData.description || ""
-                                    color: root.textMuted; font.pixelSize: 11
-                                    Layout.fillWidth: true; elide: Text.ElideRight
-                                }
-                            }
+                    Layout.fillWidth: true; spacing: 10
+                    visible: root.streamCard !== null
+                    Label { text: "Stream credentials"; color: root.textPrimary; font.pixelSize: 16; font.bold: true }
+                    Label {
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap; color: root.textSecondary; font.pixelSize: 12
+                        text: "In OBS → Settings → Stream: set Service to “Custom…”, paste the RTMP Server and Stream Key below, then Start Streaming. The key is secret — don't share it."
+                    }
+                    component CopyRow: RowLayout {
+                        id: cr
+                        property string label: ""
+                        property string value: ""
+                        property bool secret: false   // masked with dots (safe for screenshots)
+                        property bool revealed: false
+                        property bool canRegen: false
+                        signal regen()
+                        Layout.fillWidth: true; spacing: 8
+                        Label { text: cr.label; color: root.textSecondary; Layout.preferredWidth: 90; font.pixelSize: 12 }
+                        DarkField {
+                            Layout.fillWidth: true; readOnly: true; text: cr.value
+                            echoMode: (cr.secret && !cr.revealed) ? TextInput.Password : TextInput.Normal
+                        }
+                        DarkButton { visible: cr.secret; text: cr.revealed ? "Hide" : "Show"; onClicked: cr.revealed = !cr.revealed }
+                        DarkButton { visible: cr.canRegen; text: "⟳ New"; onClicked: cr.regen() }   // #17 rotate key
+                        DarkButton { text: "Copy"; onClicked: root.copyText(cr.value) }   // copies the real value
+                    }
+                    CopyRow { label: "RTMP Server"; value: root.streamCard ? root.streamCard.rtmpUrl : "" }
+                    CopyRow {
+                        label: "Stream Key"; value: root.streamCard ? root.streamCard.streamKey : ""
+                        secret: true; canRegen: true
+                        onRegen: {  // #17 rotate the publish key (revokes the old OBS key)
+                            var r = root.callParse("regenerateKey", [])
+                            if (r && r.ok) { root.streamCard = r
+                                logEvent("Stream key rotated — re-enter the new key in OBS", "warning") }
                         }
                     }
-                    ColumnLayout {
-                        visible: root.stations.length === 0
+                    RowLayout {  // #17 Tor address persists across restarts; rotate on demand
+                        visible: root.streamPrivacy === "onion"
                         Layout.fillWidth: true; spacing: 8
-                        BusyIndicator { running: root.discoveryStarted; Layout.alignment: Qt.AlignHCenter; implicitWidth: 28; implicitHeight: 28 }
+                        Label { text: "Tor address"; color: root.textSecondary; Layout.preferredWidth: 90; font.pixelSize: 12 }
                         Label {
-                            text: root.discoveryStarted ? "Searching for stations…" : "Open to discover stations"
-                            color: root.textMuted; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+                            Layout.fillWidth: true; font.pixelSize: 11; color: root.textMuted; elide: Text.ElideRight
+                            text: root.onionReady ? "stable · persists across restarts" : "publishing…"
                         }
+                        DarkButton { text: "⟳ New address"; onClicked: {  // rotate the .onion identity
+                            var r = root.callParse("regenerateOnion", [])
+                            if (r && r.ok) { root.onionReady = false; root.onionAddr = ""
+                                logEvent("Rotating Tor address — listeners will rediscover", "warning") }
+                        } }
                     }
-                    RowLayout {  // now-playing (no pause for live)
-                        visible: root.playingName.length > 0
-                        Layout.fillWidth: true; spacing: 8
-                        Label { text: "▶ " + root.playingName; color: root.textPrimary; Layout.fillWidth: true; elide: Text.ElideRight }
-                        Slider { from: 0; to: 100; value: root.volume; Layout.preferredWidth: 100
-                            onMoved: { root.volume = Math.round(value); root.call("setVolume", [root.volume]) } }
-                        DarkButton { text: "Stop"; onClicked: { root.call("stop", []); root.playingName = "" } }
-                    }
-                    RowLayout {  // listener jitter buffer (#17) — deeper rides out Tor latency spikes
-                        Layout.fillWidth: true; spacing: 8
-                        Label { text: "Buffer"; color: root.textSecondary; font.pixelSize: 12; Layout.preferredWidth: 48 }
-                        Slider {
-                            id: bufSlider; from: 2; to: 20; stepSize: 1; value: root.listenBuffer
-                            Layout.fillWidth: true
-                            onMoved: { root.listenBuffer = Math.round(value); root.call("setListenBuffer", [root.listenBuffer]) }
-                        }
-                        Label { text: root.listenBuffer + "s"; color: root.textPrimary; font.pixelSize: 12; Layout.preferredWidth: 30 }
-                    }
-                    RowLayout {  // + add private topic
-                        Layout.fillWidth: true; spacing: 8
-                        DarkField { id: topicField; Layout.fillWidth: true; placeholderText: "Add a private topic" }
-                        DarkButton { text: "Add"; enabled: topicField.text.length > 0
-                            onClicked: { root.call("addTopic", [topicField.text]); topicField.text = "" } }
-                    }
+                    DarkButton { text: "Stop"; onClicked: root.stopStream() }
                 }
+                Item { Layout.fillHeight: true }
             }
         }
 
