@@ -1,12 +1,14 @@
 {
   "name": "radio_ui",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "ui_qml",
+  "interface": "universal",
   "view": "Main.qml",
   "icon": "icons/radio.png",
   "category": "media",
-  "description": "Radio UI — two tabs (Stream / Listen). Calls radio_module via the logos bridge.",
+  "description": "Radio — broadcast a station (RTMP → MediaMTX, announce over delivery, direct or .onion). Universal ui_qml calling radio_module via modules().",
   "dependencies": ["radio_module"],
+  "codegen": { "rep": "src/radio_ui.rep" },
 
   "nix": {
     "packages": { "build": [], "runtime": [] },
