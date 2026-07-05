@@ -444,7 +444,14 @@ void RadioModulePlugin::resumeStreamIfPersisted()
     m_identity      = StationIdentity();
     if (m_keySource == QLatin1String("autogen"))
         m_identity.loadOrCreate(identityKeyPath());        // device key persists → same pubkey on resume
-    // keycard tier can't re-derive at boot (needs the card interaction) → unsigned until a re-Start via Connect Keycard
+    // A Keycard-derived station MUST NOT auto-resume: the key can't be re-derived at boot (no card
+    // interaction), so resuming would broadcast under a WRONG/unsigned identity. Leave it stopped — the
+    // user reconnects the Keycard + Starts again (startStream reuses the persisted path/key).
+    if (m_keySource == QLatin1String("keycard")) {
+        qWarning() << "RadioModulePlugin: keycard station NOT auto-resumed — reconnect the Keycard + Start";
+        m_path.clear(); m_streamKey.clear();
+        return;
+    }
     m_runtimeDir    = QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/radio_module/" + m_path;
     m_announceSeq   = 0;
     // Re-spawn the origin with the SAME path + key so OBS reconnects without reconfiguration.
