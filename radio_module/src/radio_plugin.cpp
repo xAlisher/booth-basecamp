@@ -655,12 +655,28 @@ QString RadioModulePlugin::buildAnnouncePayload(int seq) const
         ? (m_onion.isEmpty() ? QString()
                              : QStringLiteral("http://%1/%2/index.m3u8").arg(m_onion, m_path))
         : QStringLiteral("http://%1:%2/%3/index.m3u8").arg(lanIp()).arg(port("RADIO_HLS_PORT", 8888)).arg(m_path);
-    const QJsonObject a{
+    QJsonObject a{
         {"v", 1}, {"name", m_streamName}, {"host", m_hostLabel}, {"path", m_path},
         {"streamUrl", hls}, {"visibility", m_visibility}, {"description", m_description},
         {"startedAt", m_startedAt}, {"seq", seq}
     };
+    const QString np = readNowPlaying();
+    if (!np.isEmpty()) a["nowPlaying"] = np;   // #35 current show (optional; heartbeat propagates it ≤15s)
     return QString::fromUtf8(QJsonDocument(a).toJson(QJsonDocument::Compact));
+}
+
+QString RadioModulePlugin::readNowPlaying() const
+{
+    // #35 Liquidsoap's on_metadata drops the current "artist — title" into RADIO_NOWPLAYING_FILE; read it,
+    // trim, strip control chars + cap length before it rides the announce. Empty env / missing file → no field.
+    const QString path = QString::fromLocal8Bit(qgetenv("RADIO_NOWPLAYING_FILE"));
+    if (path.isEmpty()) return QString();
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return QString();
+    QString s = QString::fromUtf8(f.readAll()).trimmed();
+    f.close();
+    s.remove(QRegularExpression(QStringLiteral("[\\x00-\\x1F\\x7F]")));
+    return s.left(120);
 }
 
 QString RadioModulePlugin::announceOnce()

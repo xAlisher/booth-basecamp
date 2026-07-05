@@ -65,6 +65,7 @@ public:
     // #6 host announce. buildAnnouncePayload is a pure test seam; announceOnce gates on live
     // status then publishes (called by the #10 heartbeat timer and by tests). Not IPC API.
     QString buildAnnouncePayload(int seq) const;
+    QString readNowPlaying() const;   // #35 current show from RADIO_NOWPLAYING_FILE (Liquidsoap on_metadata drop)
     QString announceOnce();
     int     announceAttemptCount() const { return m_announceAttempts; }  // #10 test seam
 
