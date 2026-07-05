@@ -195,6 +195,11 @@ Item {
                             secret: true; canRegen: true
                             onRegen: root.regenerateKey()
                         }
+                        CredBlock {   // #49 private station: the announce topic to share out-of-band with listeners
+                            visible: root.streamCard && root.streamCard.visibility === "private"
+                            label: "Private topic — share with listeners"
+                            value: root.streamCard ? (root.streamCard.announceTopic || "") : ""
+                        }
                         ColumnLayout {
                             visible: root.streamPrivacy === "onion"
                             Layout.fillWidth: true; spacing: 4

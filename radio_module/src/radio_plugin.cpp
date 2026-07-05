@@ -307,6 +307,7 @@ QJsonObject RadioModulePlugin::buildCard() const
         {"srtUrl",  QStringLiteral("srt://%1:%2?streamid=publish:%3:publisher:%4").arg(ip).arg(srt).arg(m_path).arg(m_streamKey)},
         {"hlsUrl",  QStringLiteral("http://%1:%2/%3/index.m3u8").arg(ip).arg(hls).arg(m_path)},
         {"name", m_streamName}, {"description", m_description}, {"privacy", m_privacy},
+        {"visibility", m_visibility}, {"announceTopic", m_announceTopic},   // #49 surface the (private) topic to share
     };
 }
 
