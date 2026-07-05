@@ -11,6 +11,7 @@
 #include <QJsonObject>
 #include <QTimer>
 #include "radio_interface.h"
+#include "station_identity.h"
 
 class LogosAPI;
 class LogosAPIClient;
@@ -132,6 +133,12 @@ private:
     int       m_announceAttempts = 0;
     QString   m_announceTopic, m_hostLabel;
     QTimer    m_heartbeat;
+
+    // #24 station identity — sign announces so listeners verify the host (pubkey, not name).
+    StationIdentity m_identity;
+    QString         m_keySource;          // "anonymous" (v:1 unsigned) | "autogen" | "keycard"
+    QString identityKeyPath() const;                     // per-profile autogen/keycard privkey (0600)
+    void    loadKeycardIdentity(const QJsonObject& cfg); // #24 Stage 3 — derive bc:radio via keycard_module
 
     // Discovery (#5)
     LogosAPIClient* m_delivery = nullptr;

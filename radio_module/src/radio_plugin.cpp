@@ -1,4 +1,5 @@
 #include "radio_plugin.h"
+#include "station_identity.h"
 #include "logos_api.h"
 #include "logos_api_client.h"
 #include "logos_object.h"
@@ -109,6 +110,7 @@ void RadioModulePlugin::initLogos(LogosAPI* api)
 {
     logosAPI = api;  // base PluginInterface member — ModuleProxy reads this for IPC. Do NOT shadow it.
     qDebug() << "RadioModulePlugin: initLogos";
+    qDebug() << "RadioModulePlugin: station-identity selftest" << (StationIdentity::selfTest() ? "OK" : "FAIL");
     // Start the delivery-health poll deferred (skill ipc-client-eager-init: don't getClient in initLogos directly).
     QTimer::singleShot(2500, this, [this]{ checkDeliveryHealth(); m_deliveryHealth.start(5000); });
     // #11 — if a stream was active before a restart, re-spawn its origin with the same path/key.
@@ -240,6 +242,14 @@ QString RadioModulePlugin::startStream(const QString& configJson)
     // a .onion URL (and reach listeners through NAT without port-forwarding) instead of lanIp().
     m_privacy     = cfg.value("privacy").toString(QStringLiteral("onion"));
 
+    // #24 station identity tier: anonymous (v:1 unsigned) | autogen (device-local key) | keycard (Stage 3).
+    m_keySource = cfg.value("keySource").toString(QStringLiteral("autogen"));
+    m_identity  = StationIdentity();
+    if (m_keySource == QLatin1String("autogen"))
+        m_identity.loadOrCreate(identityKeyPath());
+    else if (m_keySource == QLatin1String("keycard"))
+        loadKeycardIdentity(cfg);   // Stage 3 — falls back to unsigned if the card/derivation isn't available
+
     // #17 — reuse the persisted publish identity so the stream key/path stay STABLE across restarts
     // (recoverable even if auto-resume raced). Mint fresh only when none exists; "⟳ New" rotates it.
     m_path.clear(); m_streamKey.clear();
@@ -313,6 +323,9 @@ QJsonObject RadioModulePlugin::buildCard() const
         {"hlsUrl",  QStringLiteral("http://%1:%2/%3/index.m3u8").arg(ip).arg(hls).arg(m_path)},
         {"name", m_streamName}, {"description", m_description}, {"privacy", m_privacy},
         {"visibility", m_visibility}, {"announceTopic", m_announceTopic},   // #49 surface the (private) topic to share
+        {"keySource", m_keySource},                                        // #24 identity tier + fingerprint (out-of-band anchor)
+        {"pubkey", m_identity.pubkeyHex()},
+        {"fingerprint", StationIdentity::fingerprint(m_identity.pubkeyHex())},
     };
 }
 
@@ -366,12 +379,42 @@ QString RadioModulePlugin::persistentHsDir() const
            + "/radio_module/hs";  // #17 stable Tor hidden-service keys (per-profile)
 }
 
+QString RadioModulePlugin::identityKeyPath() const
+{
+    return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+           + "/radio_module/station.key";  // #24 per-profile signing key (0600)
+}
+
+// #24 Stage 3 — Keycard-derived station identity. The keycard module derives a deterministic secp256k1
+// key from the card for domain "bc:radio" (SHA256(card_key || domain)); we persist it to identityKeyPath()
+// and load it like the autogen key, so heartbeats sign without a per-beat tap (the card is only needed once
+// to seed the key). If the card/derivation isn't available the tier stays unsigned (m_identity invalid).
+void RadioModulePlugin::loadKeycardIdentity(const QJsonObject& cfg)
+{
+    const QString derivedHex = cfg.value(QStringLiteral("keycardPrivHex")).toString().trimmed();
+    if (derivedHex.size() == 64) {
+        // radio_ui already ran the card derivation and passed the 32-byte key; persist it (0600) then load.
+        QFile w(identityKeyPath());
+        QDir().mkpath(QFileInfo(identityKeyPath()).absolutePath());
+        if (w.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            w.write(derivedHex.toLatin1());
+            w.close();
+            QFile::setPermissions(identityKeyPath(), QFile::ReadOwner | QFile::WriteOwner);
+        }
+    }
+    // Load ONLY an existing key (freshly-seeded above, or a prior keycard seed). Never autogen a random
+    // key for the keycard tier — if the card hasn't seeded one, stay unsigned until it does.
+    if (QFile::exists(identityKeyPath()))
+        m_identity.loadOrCreate(identityKeyPath());
+}
+
 void RadioModulePlugin::saveStreamState(bool running) const
 {
     const QJsonObject st{
         {"name", m_streamName}, {"visibility", m_visibility}, {"description", m_description},
         {"privacy", m_privacy}, {"path", m_path}, {"streamKey", m_streamKey},
         {"startedAt", m_startedAt}, {"announceTopic", m_announceTopic}, {"hostLabel", m_hostLabel},
+        {"keySource", m_keySource},  // #24 identity tier — resume reloads the same signing key
         {"running", running}  // #17 false → keep the identity (key) but don't auto-resume on restart
     };
     const QString f = stateFile();
@@ -403,6 +446,12 @@ void RadioModulePlugin::resumeStreamIfPersisted()
     m_startedAt     = st.value("startedAt").toVariant().toLongLong();
     m_announceTopic = st.value("announceTopic").toString();
     m_hostLabel     = st.value("hostLabel").toString(QStringLiteral("anonymous"));
+    // #24 — reload the identity tier + signing key so a resumed station keeps the SAME pubkey.
+    m_keySource     = st.value("keySource").toString(QStringLiteral("anonymous"));
+    m_identity      = StationIdentity();
+    if (m_keySource == QLatin1String("autogen")
+        || (m_keySource == QLatin1String("keycard") && QFile::exists(identityKeyPath())))
+        m_identity.loadOrCreate(identityKeyPath());   // resume keeps the SAME pubkey (never mint for keycard)
     m_runtimeDir    = QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/radio_module/" + m_path;
     m_announceSeq   = 0;
     // Re-spawn the origin with the SAME path + key so OBS reconnects without reconfiguration.
@@ -668,6 +717,14 @@ QString RadioModulePlugin::buildAnnouncePayload(int seq) const
     };
     const QString np = readNowPlaying();
     if (!np.isEmpty()) a["nowPlaying"] = np;   // #35 current show (optional; heartbeat propagates it ≤15s)
+    // #24 sign: bump to v:2, embed the pubkey, sign the canonical (sig-less) bytes, attach sig. The receiver
+    // strips "sig", re-serializes identically, and verifies against the embedded pubkey. Anonymous tier → v:1.
+    if (m_identity.isValid()) {
+        a[QStringLiteral("v")] = 2;
+        a[QStringLiteral("pubkey")] = m_identity.pubkeyHex();
+        const QByteArray canon = QJsonDocument(a).toJson(QJsonDocument::Compact);  // "sig" not present yet
+        a[QStringLiteral("sig")] = m_identity.signHex(canon);
+    }
     return QString::fromUtf8(QJsonDocument(a).toJson(QJsonDocument::Compact));
 }
 

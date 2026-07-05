@@ -9,8 +9,8 @@
 
   "nix": {
     "packages": {
-      "build": [],
-      "runtime": ["ffmpeg", "mediamtx", "tor", "torsocks"]
+      "build": ["pkg-config"],
+      "runtime": ["ffmpeg", "mediamtx", "tor", "torsocks", "secp256k1"]
     },
     "external_libraries": [],
     "cmake": {

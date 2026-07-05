@@ -8,14 +8,21 @@ else()
     message(FATAL_ERROR "LogosModule.cmake not found. Set LOGOS_MODULE_BUILDER_ROOT.")
 endif()
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(secp256k1 REQUIRED IMPORTED_TARGET libsecp256k1)   # #24 station-identity signing
+
 logos_module(
     NAME radio_module
     SOURCES
         src/radio_interface.h
         src/radio_plugin.h
         src/radio_plugin.cpp
+        src/station_identity.h
+        src/station_identity.cpp
     FIND_PACKAGES
         Qt6
+    LINK_LIBRARIES
+        PkgConfig::secp256k1
 )
 
 # Tests are NOT wired through CMake. The builder's #unit-tests targets the tutorial's _impl
