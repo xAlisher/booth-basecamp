@@ -134,7 +134,7 @@ Item {
             spacing: 8
             ColumnLayout {
                 spacing: 1
-                LogosText { text: "Radio"; color: Theme.palette.text; font.pixelSize: Theme.typography.panelTitleText; font.weight: Theme.typography.weightBold }
+                LogosText { text: "Booth"; color: Theme.palette.text; font.pixelSize: Theme.typography.panelTitleText; font.weight: Theme.typography.weightBold }
                 LogosText { text: "Decentralized broadcast"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
             }
             Item { Layout.fillWidth: true }
