@@ -20,6 +20,7 @@ public:
 public slots:
     QString startStream(QString configJson) override;   // by-value override (rep-slot-byvalue-override)
     QString connectKeycard(QString privHex) override;    // #24 forward the card-derived key → keycardFingerprint
+    QString saveIdentityTier(int idx) override;          // #8 persist the identity dropdown selection
     QString stopStream() override;
     QString regenerateKey() override;
     QString regenerateOnion() override;
