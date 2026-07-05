@@ -659,7 +659,7 @@ QString RadioModulePlugin::buildAnnouncePayload(int seq) const
     QJsonObject a{
         {"v", 1}, {"name", m_streamName}, {"host", m_hostLabel}, {"path", m_path},
         {"streamUrl", hls}, {"visibility", m_visibility}, {"description", m_description},
-        {"startedAt", m_startedAt}, {"seq", seq}
+        {"startedAt", m_startedAt}, {"seq", seq}, {"announceTopic", m_announceTopic}   // #44 receiver filters by topic
     };
     const QString np = readNowPlaying();
     if (!np.isEmpty()) a["nowPlaying"] = np;   // #35 current show (optional; heartbeat propagates it ≤15s)
