@@ -56,6 +56,12 @@ int main()
     StationIdentity id2;
     check("persist stable", id2.loadOrCreate(keyPath) && id2.pubkeyHex() == id.pubkeyHex());
 
+    // #24 Stage 3 — seed from a hex privkey (keycard path) → must sign + verify
+    StationIdentity kc;
+    const bool kok = kc.fromSeckeyHex(QString::fromLatin1(QByteArray(32, 2).toHex()));
+    const QString ks = kok ? kc.signHex(QByteArray("kc")) : QString();
+    check("fromSeckeyHex sign+verify", kok && StationIdentity::verify(kc.pubkeyHex(), ks, QByteArray("kc")));
+
     const QString fp = StationIdentity::fingerprint(id.pubkeyHex());
     printf("  fingerprint = %s\n", fp.toUtf8().constData());
     check("fingerprint non-empty", !fp.isEmpty());

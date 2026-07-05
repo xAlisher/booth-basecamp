@@ -20,6 +20,10 @@ public:
     bool    isValid()   const { return m_valid; }
     QString pubkeyHex() const { return m_pubHex; }   // 33-byte COMPRESSED pubkey, lowercase hex (66 chars)
 
+    // #24 Stage 3 — seed the identity from a 32-byte hex private key (e.g. keycard deriveKey), in memory
+    // only (NOT persisted — the card re-derives it deterministically each session). false on bad input.
+    bool fromSeckeyHex(const QString& seckeyHex);
+
     // ECDSA-secp256k1 signature over SHA-256(msg), as 64-byte compact lowercase hex. "" on failure.
     QString signHex(const QByteArray& msg) const;
 

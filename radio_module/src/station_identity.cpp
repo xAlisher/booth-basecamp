@@ -78,6 +78,22 @@ bool StationIdentity::loadOrCreate(const QString& keyPath)
     return true;
 }
 
+bool StationIdentity::fromSeckeyHex(const QString& seckeyHex)
+{
+    m_valid = false;
+    m_seckey.clear();
+    m_pubHex.clear();
+    const QByteArray sk = QByteArray::fromHex(seckeyHex.toUtf8());
+    if (sk.size() != 32 || !secp256k1_ec_seckey_verify(ctx(), reinterpret_cast<const unsigned char*>(sk.constData())))
+        return false;
+    const QString pub = compressedPubHex(sk);
+    if (pub.isEmpty()) return false;
+    m_seckey = sk;
+    m_pubHex = pub;
+    m_valid  = true;
+    return true;
+}
+
 QString StationIdentity::signHex(const QByteArray& msg) const
 {
     if (!m_valid) return QString();
