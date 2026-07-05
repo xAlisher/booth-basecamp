@@ -1,138 +1,152 @@
-# radio-basecamp
+# booth-basecamp
 
-Decentralized **audio broadcast** module for [Logos Basecamp](https://github.com/logos-co/logos-app).
-A host broadcasts a stream and **announces it over LogosMessaging by topic** — no central index, no
-account. **Listening lives in the [Receiver](https://github.com/xAlisher/receiver-basecamp) module** —
-Radio is broadcast-only.
+**Booth** — the sovereign, decentralized **broadcaster** for [Logos Basecamp](https://github.com/logos-co/logos-app).
+Point OBS at Booth, hit **Start**, and it announces your station **over LogosMessaging by topic** — no
+central index, no account, no directory server. Each station has a **verifiable, key-based identity**:
+broadcasters sign their announces, so a station **is its public key**, not a name anyone can grab.
+**Listening lives entirely in the sibling [Receiver](https://github.com/xAlisher/receiver-basecamp)
+module** — Booth is broadcast-only.
 
-> **📦 Install:** grab the signed **[v0.2.0 release](https://github.com/xAlisher/radio-basecamp/releases/tag/v0.2.0)**
+> **Naming:** the product/repo is **Booth** (`booth-basecamp`) and the UI panel reads **Booth —
+> "Decentralized broadcast."** The internal **module IDs stay `radio_module` (core) + `radio_ui`
+> (ui_qml)** and the universal API is still **`modules().radio_module`** — unchanged for
+> compatibility. Booth is the product name; `radio_*` are the module identifiers.
+
+> **📦 Install:** grab the signed **[release](https://github.com/xAlisher/booth-basecamp/releases)**
 > (`radio_module` + `radio_ui`, ✓ Signed by xAlisher) — see [Install](#install-into-logos-basecamp).
-> Universal API (`modules().radio_module`) + design-system UI. Validated on Basecamp v0.2.0: Start →
-> MediaMTX → credentials → onion published.
+> Universal API (`modules().radio_module`) + design-system UI. Runs on Basecamp **v0.2+**: Start →
+> MediaMTX → credentials → signed announce published.
 
-> Status (2026-07-05): **v0.2.0 — broadcast-only, universal API + design-system, on the current v0.2
-> platform.** The old **268-only** caveat is resolved (the v0.2 migration fixed the `delivery_module`
-> consumer hang). Broadcasting-only: the Listen tab was removed (listening is the Receiver's job).
+> Status (2026-07-05): **broadcast-only, universal API + design-system, on the current v0.2 platform.**
+> The old **268-only** caveat is resolved (the v0.2 migration fixed the `delivery_module` consumer
+> hang, logos-basecamp#150). The Listen tab was removed — listening is the Receiver's job.
 
 ---
 
 ## Demo
 
-Two machines, no server between them — the host streams from OBS while a *separate* listener
-discovers the station over LogosMessaging (Waku) and plays it:
+> ⚠️ Screenshots below predate the Booth rebrand + identity work and may be stale — treat them as
+> illustrative, not current.
 
-| Host — start a station (Stream tab) | Listener — discovered & playing over LogosMessaging |
+Two machines, no server between them — Booth streams from OBS while a *separate* **Receiver**
+discovers the station over LogosMessaging (Waku), verifies its signature, and plays it:
+
+| Booth — start a station | Receiver — discovered, verified & playing |
 |:--:|:--:|
-| ![Host: Stream tab — name, visibility, start](docs/images/demo-host-stream.png) | ![Listener: Listen tab showing the discovered station](docs/images/demo-listener.png) |
+| ![Booth: start a station — name, identity, privacy, start](docs/images/demo-host-stream.png) | ![Receiver: the discovered station playing over LogosMessaging](docs/images/demo-listener.png) |
 
 ---
 
 ## What it does
 
-- **Broadcast** — point OBS at a generated ingest URL; the module runs the origin and announces.
-- **Discover** — listeners subscribe to a well-known topic and see live stations appear (heartbeat).
-- **Listen** — tap a station to play its stream via `ffplay`. No peer connections — a plain pull from the origin.
-- **Sovereign** — no platform, no directory server, no account. Private streams via a shared topic string.
+- **Broadcast** — point OBS at a generated ingest URL; Booth runs the origin and announces the station.
+- **Sign** — every announce is signed with the station's key (see [Station identity](#station-identity-🔑)),
+  so listeners can verify who's broadcasting — rename-proof, impersonation-resistant.
+- **Choose reach** — announce on the **public** directory topic (everyone's Receiver sees it) or a
+  **private** per-stream topic you share out-of-band (invite-only).
+- **Choose exposure** — **Hide IP with Tor** (`.onion`, NAT-friendly) or **Show IP (LAN)** for
+  local low-latency (see [Privacy](#privacy-🧅)).
+- **Sovereign** — no platform, no directory server, no account.
 
-## Quick start
+## Quick start (broadcasting)
 
-### Broadcasting (host)
-1. Open **radio** → **Stream** tab → name your station → **Public**/**Private** → **Start**.
-2. The module shows an **OBS setup card** (WHIP / RTMP / SRT). Copy the values into OBS and
+1. Open **Booth** → name your station → pick a **Station identity** (Anonymous / Autogenerated /
+   Keycard) → choose **Public** or **Private** reach → set **Privacy** (Tor / LAN) → **Start**.
+2. Booth shows an **OBS setup card** (WHIP / RTMP / SRT). Copy the values into OBS and
    **Start Streaming** in OBS. → **Full guide: [`docs/CONNECTING-OBS.md`](docs/CONNECTING-OBS.md)**
-3. When the status light turns **🔴 Live**, your station is announced over LogosMessaging.
+3. When the status light turns **🔴 Live**, your station is signed and announced over LogosMessaging.
+   If you picked a signed identity, **share your [station fingerprint](#station-identity-🔑)** so
+   listeners can verify it's really you.
 
-### Listening
-1. Open **radio** → **Listen** tab. It subscribes to the directory topic; live stations appear
-   (name · host · uptime) as their heartbeats arrive.
-2. **Tap a station** to play it. Use the **Stop** bar to stop.
-3. For a private/unlisted station, paste its topic into **+ Add a private topic**.
+Discovery and playback happen in the [Receiver](https://github.com/xAlisher/receiver-basecamp) — Booth
+does not listen.
 
-Dead stations drop off the list automatically (45 s TTL = 3 missed heartbeats).
+### Public vs. private reach
 
-### Public vs. private stations — what "Add a private topic" means
+Announces travel over **LogosMessaging topics**, and as the broadcaster you choose which:
 
-Discovery happens over **LogosMessaging topics**. A **Public** station announces on the well-known
-**directory topic** (`/radio-basecamp/1/directory/json`) that everyone's Listen tab auto-subscribes
-to — so it shows up for everyone. A **Private** station instead announces on an **unguessable
-per-stream topic** (`/radio-basecamp/1/<random>/json`) and is **not** on the public directory — so it
-never appears in anyone's Listen list by default.
+- **Public** — Booth announces on the well-known **directory topic**
+  (`/radio-basecamp/1/directory/json`) that every Receiver auto-subscribes to, so your station shows
+  up for everyone.
+- **Private** — Booth announces on an **unguessable per-stream topic**
+  (`/radio-basecamp/1/<random>/json`) that's **not** on the public directory. Share that topic string
+  **out-of-band** (e.g. a DM) and only listeners who paste it into their Receiver will see the station
+  — an **unlisted / invite-only broadcast**.
 
-**"+ Add a private topic"** lets a listener paste that private topic string — which the host shares
-**out-of-band** (e.g., a DM) — to subscribe to it; the private station then appears in *their* Listen
-list. It's how you tune into an **unlisted / invite-only broadcast**.
+Stations drop off a Receiver's list automatically when their heartbeats stop (45 s TTL = 3 missed
+heartbeats).
+
+## Station identity 🔑
+
+A station **is its public key, not its name** — so nobody can impersonate you by copying your station
+name. Booth signs every announce with **secp256k1 ECDSA**, and the Receiver verifies each one. Pick a
+**Station identity** tier from the dropdown:
+
+| Tier | Keys | Portability |
+|------|------|-------------|
+| **Anonymous** | none — announces are **unsigned** | — |
+| **Autogenerated** | a **device-local** key, persisted on this machine | same identity only on *this* device |
+| **Keycard** | a **hardware-backed** key derived from a [Logos Keycard](https://github.com/logos-co) | **same identity/fingerprint on ANY device** with the card |
+
+For **Keycard**, hit **Connect Keycard** — the Keycard module holds the key and does the signing; the
+private key never leaves the card.
+
+Every **signed** station gets a **3-word, PGP-style fingerprint** derived from its public key — e.g.
+**`newborn vocalist uncut`** — shown in the UI as *"Station fingerprint — share so listeners verify
+you."* It's the **out-of-band anchor**: tell people your fingerprint, and their Receiver shows the
+**same** three words when they tune in. Because the fingerprint is derived from the key (not the name),
+renaming your station doesn't change it, and no impostor can reproduce it.
+
+## Privacy 🧅
+
+A **Privacy** toggle picks how your address is exposed:
+
+- **Hide IP with Tor** — Booth runs a **Tor hidden service** in front of its origin and announces a
+  `…​.onion` URL. **No IP appears in the announce or on the wire**, and it reaches listeners through
+  **NAT with no port-forwarding**. First connect is slower (Tor circuit setup); the Receiver's jitter
+  buffer rides out the latency. The `.onion` and stream key **persist across restarts** (rotate on
+  demand with ⟳).
+- **Show IP (LAN)** — direct pull from the origin for local/low-latency use. The announce carries the
+  host address and host↔listener IPs are mutually exposed (LAN-scoped).
+
+Full threat model + ranked options:
+[`docs/BRIEF.md` §Privacy](docs/BRIEF.md#️-privacy--threat-model--v1-hides-discovery-not-the-streamers-ip).
 
 ## How it works
 
 ```
-Host                       LogosMessaging topic            Listener
- | OBS → MediaMTX (WHIP/RTMP/SRT)    |                         |
- | MediaMTX serves HLS .m3u8         |                         |
- | announce(name,url,…) heartbeat -->|------------------------>| discovers station
- |                                   |   (15s re-announce)     |
- | <===== HTTP: listener's ffplay pulls HLS from MediaMTX =====>|
+Booth                      LogosMessaging topic          Receiver (sibling module)
+ | OBS → MediaMTX (WHIP/RTMP/SRT)   |                         |
+ | MediaMTX serves HLS .m3u8        |                         |
+ | sign+announce(name,url,pubkey) ->|------------------------>| discovers + verifies signature
+ |                                  |   (15s re-announce)     | → shows station fingerprint
+ | <====== HTTP: Receiver pulls HLS from MediaMTX (direct or via Tor) ======>|
 ```
 
 Two modules (tutorial-v3 canonical: core + QML UI):
 
 | Module | Type | Role |
 |--------|------|------|
-| `radio_module` | `core` | MediaMTX origin control, ingest minting, status polling, `ffplay` playback, `delivery_module` discovery, heartbeat/TTL |
-| `radio_ui` | `ui_qml` (QML-only) | Two tabs — Stream / Listen — calling `radio_module` via the `logos` bridge |
+| `radio_module` | `core` | MediaMTX origin control, ingest minting, status polling, secp256k1 signing (device key / Keycard), `delivery_module` announce, heartbeat/TTL |
+| `radio_ui` | `ui_qml` (QML-only) | The Booth broadcast panel — identity, privacy, reach, OBS card — calling `radio_module` via the `logos` bridge |
 
-**Key platform facts** (see [`docs/BRIEF.md`](docs/BRIEF.md) §Feasibility): Qt Multimedia isn't in
-the AppImage (playback uses `ffplay`); the QML sandbox blocks network/subprocess (all I/O is in the
-core module); "Waku" is now `delivery_module` (LogosMessaging), which has no history query, so
-discovery is heartbeat-only.
-
-## Compatibility
-
-| Basecamp build | radio works? |
-|----------------|:---:|
-| **[`pre-release-1dc1c08-268`](https://github.com/logos-co/logos-basecamp/releases/tag/pre-release-1dc1c08-268)** (2026-05-19, the demo above) | ✅ |
-| `0.1.2` / `pre-release-2576ef8-269` and newer | ❌ |
-| [`pre-release-63b35e8-295`](https://github.com/logos-co/logos-basecamp/releases/tag/pre-release-63b35e8-295) (current pre-release) | ❌ |
-
-**Why newer builds break it:** `radio_module` is a `type: core` module that consumes
-`delivery_module`, and on current platform builds **constructing the typed SDK crashes at load** —
-`new LogosModules(api)` throws `std::length_error` inside `LogosAPI::getClient` (the `CoreManager`
-constructor), before any of our code runs. It's an acknowledged, open platform limitation, not a bug
-in this module:
-
-- [logos-delivery-module#31](https://github.com/logos-co/logos-delivery-module/issues/31) — a core module consuming delivery SIGSEGVs in `getClient` (identical stack)
-- [logos-basecamp#150](https://github.com/logos-co/logos-basecamp/issues/150) — third-party **core** plugins have no IPC token-bootstrap path
-- [logos-basecamp#169](https://github.com/logos-co/logos-basecamp/issues/169) — UI → core → delivery dev-`.lgx` trips the 2 s token-handshake → spinner
-- [logos-tutorial#67](https://github.com/logos-co/logos-tutorial/issues/67) — our write-up of the trap
-
-The supported fix is to consume `delivery_module` from a **`ui_qml` module with a C++ backend**
-(the shape `logos-delivery-demo` uses); that refactor is in progress on the `ui-qml-backend` branch.
-
-## Privacy 🧅
-
-**Onion mode (the default) hides the streamer's IP.** The host runs a **Tor hidden service** in front
-of its origin and announces a `…​.onion` URL — **no IP ever appears in the announce or on the wire**, and
-it reaches listeners through NAT with no port-forwarding. Listeners play through `torsocks`, so the
-host↔listener connection is end-to-end over Tor. The `.onion` and the stream key **persist across
-restarts** (rotate either on demand with ⟳). A listener-side **jitter buffer** (2–20 s) rides out Tor
-latency so audio doesn't chop.
-
-A **Direct (LAN)** mode is opt-in for local/low-latency use — that mode pulls audio straight from the
-host's origin, so the announce carries the host address and host↔listener IPs are mutually exposed
-(LAN-scoped today). Full threat model + ranked options:
-[`docs/BRIEF.md` §Privacy](docs/BRIEF.md#️-privacy--threat-model--v1-hides-discovery-not-the-streamers-ip).
+**Key platform facts** (see [`docs/BRIEF.md`](docs/BRIEF.md) §Feasibility): the QML sandbox blocks
+network/subprocess, so all I/O (MediaMTX, Tor, signing, delivery) lives in the core module; "Waku" is
+now `delivery_module` (LogosMessaging), which has no history query, so discovery is heartbeat-only.
 
 ## Dependencies
 
 | Module | Installed name | Repo | Role |
 |--------|----------------|------|------|
-| **radio** (this) | `radio_module` | this repo | core logic |
-| **radio-ui** (this) | `radio_ui` | this repo | QML UI |
+| **Booth** (this) | `radio_module` | this repo | core logic + signing |
+| **Booth UI** (this) | `radio_ui` | this repo | QML UI |
 | **delivery** | `delivery_module` | [logos-delivery-module](https://github.com/logos-co/logos-delivery-module) (pinned v0.1.1) | LogosMessaging announce/subscribe |
+| **keycard** | `keycard_module` | [logos](https://github.com/logos-co) | hardware-backed signing (Keycard identity tier) |
 
-External runtime binaries (not yet bundled in the LGX — see Install):
-- **Host:** **OBS Studio** (capture) + **MediaMTX** (origin; `scripts/install.sh` drops a static build into the module dir).
-- **Onion mode:** **tor** + **torsocks** (system `apt install tor torsocks`, or nix).
-- **Listener:** **ffmpeg/ffplay** (playback, system).
+External runtime binaries for broadcasting (not yet bundled in the LGX — see Install):
+- **OBS Studio** (capture) + **MediaMTX** (ingest / HLS origin; `scripts/install.sh` drops a static build into the module dir).
+- **tor** (for **Hide IP with Tor** mode — system `apt install tor`, or nix).
+- **ffmpeg** (media plumbing).
 
 Each binary is resolved as: `RADIO_*_BIN` env override → `<module-dir>[/bin]/<tool>` → `PATH`.
 
@@ -146,31 +160,25 @@ cd ../radio_ui   && nix run .     # launches the UI in logos-standalone-app
 
 ### Install into Logos Basecamp
 
-**Signed v0.2.0 release** (✓ Signed by xAlisher — no `--allow-unsigned`). Runtime deps on PATH:
-`mediamtx` (broadcast server) + `tor` (for `.onion`). Install both — `radio_ui` depends on `radio_module`:
+**Signed release** (✓ Signed by xAlisher — no `--allow-unsigned`). On Basecamp **v0.2+** (universal
+API). Runtime deps on PATH: `ffmpeg`, `tor` (for `.onion`), `mediamtx` (ingest / HLS origin). Install
+both artifacts — `radio_ui` depends on `radio_module` (module IDs are unchanged despite the Booth rebrand):
 
 ```bash
 PROF=~/.local/share/Logos/LogosBasecamp
-base=https://github.com/xAlisher/radio-basecamp/releases/download/v0.2.0
-for f in radio_module-0.1.0 radio_ui-0.2.0; do
+base=https://github.com/xAlisher/booth-basecamp/releases/latest/download
+for f in radio_module radio_ui; do
   curl -fL -o "$f-linux-amd64.lgx" "$base/$f-linux-amd64.lgx"
   lgpm --modules-dir "$PROF/modules" --ui-plugins-dir "$PROF/plugins" install --file "$f-linux-amd64.lgx"
 done
 ```
-Then launch Basecamp and open **Radio**.
+Then launch Basecamp and open **Booth**.
 
 From source:
 
 ```bash
 ./scripts/install.sh    # builds both .lgx and lgpm-installs to LogosBasecamp
 ./scripts/relaunch.sh   # kills logos_host + restarts the AppImage
-```
-
-From the catalog:
-
-```bash
-lgpd repo add https://raw.githubusercontent.com/xAlisher/logos-basecamp-modules/main/logos-repo.json
-lgpd install radio          # installs radio_module + radio_ui
 ```
 
 ### Installing `delivery_module` (required — it does **NOT** ship with the platform)
@@ -182,7 +190,7 @@ drifts the `Q_INVOKABLE` signatures → `"Invalid response"` / load crashes. Pic
 
 **A — prebuilt LGX (no Nix needed).** Grab
 [`dist/delivery_module-v0.1.1-linux-amd64.lgx`](dist/delivery_module-v0.1.1-linux-amd64.lgx) (also on
-[Releases](https://github.com/xAlisher/radio-basecamp/releases)) and install it:
+[Releases](https://github.com/xAlisher/booth-basecamp/releases)) and install it:
 
 ```bash
 MDIR="$HOME/.local/share/Logos/LogosBasecamp/modules"          # Linux profile path
@@ -204,25 +212,16 @@ cp -r /tmp/dm/variants/linux-amd64/. "$MDIR/delivery_module/" && cp /tmp/dm/mani
 printf linux-amd64 > "$MDIR/delivery_module/variant"
 ```
 
-`radio_module` + `radio_ui` install the same way (from this repo's Releases / catalog — see above).
+`radio_module` + `radio_ui` install the same way (from this repo's Releases — see above).
 
-> **⚠️ glibc / AppImage:** the `268` AppImage needs **glibc ≥ 2.38**. On older hosts (e.g. Ubuntu 22.04 /
-> glibc 2.35) run Basecamp inside a glibc-≥2.38 container — a **`distrobox` on Ubuntu 24.04** (glibc 2.39)
-> is confirmed working. This is an upstream platform build requirement, not a module issue.
-
-> **⚠️ Requirements before it works:**
-> 1. The [`pre-release-1dc1c08-268` Basecamp build](#compatibility) — newer builds crash at load
->    ([#31](https://github.com/logos-co/logos-delivery-module/issues/31)).
-> 2. The runtime binaries from [Dependencies](#dependencies) — **the LGX bundles only the plugins**
->    (runtime-binary bundling is blocked on
->    [logos-module-builder#114](https://github.com/logos-co/logos-module-builder/issues/114)). Install
->    `mediamtx` (host), `tor` + `torsocks` (onion), `ffmpeg`/`ffplay` (listener) via apt/nix, or point the
->    `RADIO_*_BIN` env overrides at them.
+> **⚠️ Runtime binaries:** the LGX bundles only the plugins (runtime-binary bundling is blocked on
+> [logos-module-builder#114](https://github.com/logos-co/logos-module-builder/issues/114)). Install
+> `mediamtx` + `ffmpeg` + `tor` via apt/nix, or point the `RADIO_*_BIN` env overrides at them.
 
 ## Test (headless)
 
 ```bash
-# Core — in-process harness (instantiates the plugin; proves start/spawn/mint/status/play/announce/TTL)
+# Core — in-process harness (instantiates the plugin; proves start/spawn/mint/status/sign/announce/TTL)
 radio_module/tests/run-direct-test.sh
 # Core — logoscore load/dispatch smoke
 radio_module/tests/run-headless-tests.sh
@@ -240,8 +239,8 @@ for exactly what each test proves and what still needs the running AppImage.
 | `RADIO_RTMP_PORT` / `RADIO_WHIP_PORT` / `RADIO_SRT_PORT` / `RADIO_HLS_PORT` / `RADIO_API_PORT` | 1935 / 8889 / 8890 / 8888 / 9997 | Origin ports |
 | `RADIO_DIRECTORY_TOPIC` | `/radio-basecamp/1/directory/json` | Public discovery topic |
 | `RADIO_HEARTBEAT_MS` | 15000 | Re-announce interval |
-| `RADIO_TTL_MS` | 45000 | Listener drops a station after this without a heartbeat |
-| `RADIO_MEDIAMTX_BIN` / `RADIO_FFPLAY_BIN` | `mediamtx` / `ffplay` | Binary paths |
+| `RADIO_TTL_MS` | 45000 | A Receiver drops a station after this without a heartbeat |
+| `RADIO_MEDIAMTX_BIN` / `RADIO_FFMPEG_BIN` | `mediamtx` / `ffmpeg` | Binary paths |
 
 ## License
 
