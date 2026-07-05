@@ -4,6 +4,7 @@
 
 #include <QDateTime>
 #include <QFile>
+#include <QSettings>
 #include <QJsonDocument>
 #include <QJsonObject>
 
@@ -20,7 +21,20 @@ QJsonObject parseObj(const QString& json) { return QJsonDocument::fromJson(json.
 }
 
 RadioUiBackend::RadioUiBackend(QObject* parent)
-    : RadioUiSimpleSource(parent) {}
+    : RadioUiSimpleSource(parent)
+{
+    // #8 restore the last-selected identity tier (no IPC — safe in the constructor).
+    QSettings s{QStringLiteral("logos"), QStringLiteral("radio_ui")};
+    setIdentityTier(qBound(0, s.value(QStringLiteral("identityTier"), 1).toInt(), 2));
+}
+
+QString RadioUiBackend::saveIdentityTier(int idx)
+{
+    idx = qBound(0, idx, 2);
+    QSettings{QStringLiteral("logos"), QStringLiteral("radio_ui")}.setValue(QStringLiteral("identityTier"), idx);
+    setIdentityTier(idx);   // the generated PROP setter — updates the PROP the QML binds to
+    return QStringLiteral("{\"ok\":true}");
+}
 
 void RadioUiBackend::onContextReady()
 {
@@ -70,6 +84,22 @@ void RadioUiBackend::applyStreamCard(const QString& json)
 }
 
 // ── mutators: fire-and-forget (SLOT returns immediately; state lands via the poll PROPs) ──────────
+QString RadioUiBackend::connectKeycard(QString privHex)
+{
+    if (!isContextReady()) return QStringLiteral("{\"ok\":false,\"error\":\"context_not_ready\"}");
+    modules().radio_module.connectKeycardAsync(privHex, [this](QString r) {
+        const QJsonObject o = QJsonDocument::fromJson(r.toUtf8()).object();
+        if (o.value(QStringLiteral("ok")).toBool()) {
+            setKeycardFingerprint(o.value(QStringLiteral("fingerprint")).toString());
+            emit activity(QStringLiteral("Keycard linked · ") + keycardFingerprint());
+        } else {
+            setKeycardFingerprint(QString());
+            emit activity(QStringLiteral("Keycard connect failed — unlock the card, then try again"));
+        }
+    }, Timeout());
+    return QStringLiteral("{\"ok\":true}");
+}
+
 QString RadioUiBackend::startStream(QString configJson)
 {
     if (!isContextReady()) return QStringLiteral("{\"ok\":false,\"error\":\"context_not_ready\"}");

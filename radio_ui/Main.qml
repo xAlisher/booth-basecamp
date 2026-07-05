@@ -23,6 +23,10 @@ Item {
     readonly property string  deliveryState: backend ? backend.deliveryState : "offline"
     readonly property var     streamCard: (backend && backend.streamCardJson && backend.streamCardJson.length > 0)
                                           ? JSON.parse(backend.streamCardJson) : null
+    readonly property var     keySrc: ["anonymous", "autogen", "keycard"]   // #24 dropdown index → tier
+    readonly property string  keycardFp: backend ? backend.keycardFingerprint : ""   // #24 set after Connect Keycard
+    property string keycardAuthId: ""
+    property string keycardAuthStatus: ""   // "" | pending | complete | error
 
     // ── Backend actions (SLOTs via logos.watch) ────────────────────────────────
     function startStream() {
@@ -32,6 +36,7 @@ Item {
             visibility: visBox.currentIndex === 1 ? "private" : "public",
             privateTopic: visBox.currentIndex === 1 ? privTopicField.text.trim() : "",
             privacy: onion ? "onion" : "public",
+            keySource: root.keySrc[keyBox.currentIndex],          // #24 anonymous | autogen | keycard (radio_module derives)
             description: descField.text
         })
         logos.watch(backend.startStream(cfg),
@@ -41,6 +46,39 @@ Item {
     function stopStream() { logos.watch(backend.stopStream(), function(){ logEvent("Stream stopped", "info") }, function(){}) }
     function regenerateKey() { logos.watch(backend.regenerateKey(), function(){ logEvent("Stream key rotated — re-enter the new key in your streaming software", "warning") }, function(){}) }
     function regenerateOnion() { logos.watch(backend.regenerateOnion(), function(){ logEvent("Rotating Tor address — listeners will rediscover", "warning") }, function(){}) }
+
+    // #7/#24 Connect Keycard — beacon-style visible request: requestAuth pops the keycard UI, then poll
+    // checkAuthStatus for the derived bc:radio key; hand it to radio_module to seed the signing identity.
+    function callModuleParse(raw) { try { var t = JSON.parse(raw); return typeof t === 'string' ? JSON.parse(t) : t } catch (e) { return null } }
+    function connectKeycard() {
+        root.keycardAuthStatus = "pending"
+        var r = root.callModuleParse(logos.callModule("keycard", "requestAuth", ["bc:radio", "radio_ui"]))
+        if (r && r.authId) {
+            root.keycardAuthId = r.authId
+            keycardAuthPoll.start()
+            logEvent("Keycard request sent — approve it on your Keycard", "info")
+        } else {
+            root.keycardAuthStatus = "error"
+            logEvent("Couldn't reach the Keycard module — is it installed + a card inserted?", "error")
+        }
+    }
+    Timer {
+        id: keycardAuthPoll
+        interval: 1000; repeat: true
+        onTriggered: {
+            if (root.keycardAuthId === "") { stop(); return }
+            var r = root.callModuleParse(logos.callModule("keycard", "checkAuthStatus", [root.keycardAuthId]))
+            if (!r) return
+            if (r.status === "complete") {
+                stop(); root.keycardAuthId = ""; root.keycardAuthStatus = "complete"
+                logos.watch(backend.connectKeycard(r.key),   // radio_module seeds identity → keycardFingerprint PROP
+                            function(){ logEvent("Keycard linked", "success") }, function(){})
+            } else if (r.status === "failed" || r.status === "rejected") {
+                stop(); root.keycardAuthId = ""; root.keycardAuthStatus = "error"
+                logEvent("Keycard auth " + r.status, "error")
+            }
+        }
+    }
 
     // status → text + Theme.palette colour (LogosBadge pattern, per delivery-demo/receiver)
     function deliveryColor() {
@@ -96,7 +134,7 @@ Item {
             spacing: 8
             ColumnLayout {
                 spacing: 1
-                LogosText { text: "Radio"; color: Theme.palette.text; font.pixelSize: Theme.typography.panelTitleText; font.weight: Theme.typography.weightBold }
+                LogosText { text: "Booth"; color: Theme.palette.text; font.pixelSize: Theme.typography.panelTitleText; font.weight: Theme.typography.weightBold }
                 LogosText { text: "Decentralized broadcast"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
             }
             Item { Layout.fillWidth: true }
@@ -135,7 +173,7 @@ Item {
                         ColumnLayout {
                             Layout.fillWidth: true; spacing: 4
                             LogosText { text: "Privacy"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
-                            LogosComboBox { id: privacyBox; model: ["Onion (Tor)", "Direct (LAN)"]; currentIndex: 0; Layout.fillWidth: true }
+                            LogosComboBox { id: privacyBox; model: ["Hide IP with Tor", "Show IP (LAN)"]; currentIndex: 0; Layout.fillWidth: true }
                         }
                     }
                     LogosText {
@@ -145,16 +183,57 @@ Item {
                             ? "🧅 Listeners reach you over Tor — your IP stays hidden and it works through NAT (no port-forwarding). First connect is slower."
                             : "⚠ Direct mode is LAN-only and exposes your IP to listeners. Use it only for local/low-latency streams."
                     }
+                    // #24 station identity: Anonymous (unsigned) | Autogenerated (device key) | Keycard (portable)
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 4
+                        LogosText { text: "Station identity"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                        LogosComboBox { id: keyBox; model: ["Anonymous — no identity", "Autogenerated key", "Derive from Keycard"]
+                            Layout.fillWidth: true; currentIndex: 1
+                            Component.onCompleted: if (root.backend) currentIndex = root.backend.identityTier   // #8 restore
+                            onActivated: if (root.backend) logos.watch(root.backend.saveIdentityTier(currentIndex), function(){}, function(){})
+                        }
+                        Connections {   // #8 the persisted tier may arrive async from the backend
+                            target: root.backend; ignoreUnknownSignals: true
+                            function onIdentityTierChanged() { keyBox.currentIndex = root.backend.identityTier }
+                        }
+                        LogosText {
+                            Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: Theme.typography.secondaryText
+                            color: keyBox.currentIndex === 0 ? Theme.palette.warning : Theme.palette.textMuted
+                            text: keyBox.currentIndex === 0
+                                ? "Fully anonymous — but listeners can't verify or pin you, and a name can be impersonated."
+                                : keyBox.currentIndex === 1
+                                ? "A device-local key signs your announces — listeners verify + pin you across name/Tor changes (this device only)."
+                                : "🔑 A portable key derived from your Keycard (same fingerprint on any device)."
+                        }
+                        // #7/#24 explicit Connect-Keycard step — derive bc:radio now + show the fingerprint before Start
+                        RowLayout {
+                            visible: keyBox.currentIndex === 2
+                            Layout.fillWidth: true; spacing: 8
+                            LogosButton {
+                                text: root.keycardFp.length > 0 ? "✓ Keycard linked"
+                                    : root.keycardAuthStatus === "pending" ? "Waiting for Keycard…" : "Connect Keycard"
+                                enabled: root.keycardFp.length === 0 && root.keycardAuthStatus !== "pending"
+                                onClicked: root.connectKeycard()
+                            }
+                            LogosText {
+                                visible: root.keycardFp.length > 0
+                                Layout.alignment: Qt.AlignVCenter
+                                text: root.keycardFp; color: Theme.palette.success; font.pixelSize: Theme.typography.secondaryText
+                            }
+                        }
+                    }
                     // #49 private → name the topic listeners will subscribe to
                     ColumnLayout {
                         visible: visBox.currentIndex === 1
                         Layout.fillWidth: true; spacing: 4
-                        LogosText { text: "Private topic name"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
-                        LogosTextField { id: privTopicField; Layout.fillWidth: true; placeholderText: "e.g. my-secret-room — share with listeners" }
+                        LogosText { text: "Private directory name"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                        LogosTextField { id: privTopicField; Layout.fillWidth: true; placeholderText: "e.g. my-secret-room — a private directory to share" }
                     }
                     LogosText { text: "Description (optional)"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
                     LogosTextField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
-                    LogosButton { text: "Start"; enabled: nameField.text.length > 0; onClicked: root.startStream() }
+                    LogosButton { text: "Start"
+                        enabled: nameField.text.length > 0 && (keyBox.currentIndex !== 2 || root.keycardFp.length > 0)  // #7 keycard tier needs Connect first
+                        onClicked: root.startStream() }
                 }
 
                 // credentials — bordered card (delivery-demo style), each field a labeled input block
@@ -205,8 +284,14 @@ Item {
                         }
                         CredBlock {   // #49 private station: the announce topic to share out-of-band with listeners
                             visible: root.streamCard && root.streamCard.visibility === "private"
-                            label: "Private topic — share with listeners"
+                            label: "Private directory — share with listeners"
                             value: root.streamCard ? (root.streamCard.announceTopic || "") : ""
+                        }
+                        CredBlock {   // #24 station fingerprint — the out-of-band anchor listeners verify/pin you by
+                            visible: root.streamCard && (root.streamCard.keySource || "anonymous") !== "anonymous"
+                                     && (root.streamCard.fingerprint || "").length > 0
+                            label: "Station fingerprint — share so listeners verify you"
+                            value: root.streamCard ? (root.streamCard.fingerprint || "") : ""
                         }
                         ColumnLayout {
                             visible: root.streamPrivacy === "onion"

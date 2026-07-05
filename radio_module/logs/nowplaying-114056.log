@@ -1,0 +1,187 @@
+warning: Git tree '/home/alisher/basecamp/modules/radio-basecamp' is dirty
+these 4 derivations will be built:
+  /nix/store/mljxqnxb4pf0rangy0yy1wpfljxy909j-logos-radio_module-module-lib-0.1.0.drv
+  /nix/store/0wdvwpzpgnzgy1y8dbv829g6nghywj6n-closure-info.drv
+  /nix/store/vxa0vwp53pmbyv732wwhh003bwny0rh8-logos-radio_module-module-lib-bundle-0.1.0.drv
+  /nix/store/32497dz2j9jx5myjqbxv48gy7xa8rn8b-logos-radio_module-module-lib-lgx-0.1.0.drv
+building '/nix/store/mljxqnxb4pf0rangy0yy1wpfljxy909j-logos-radio_module-module-lib-0.1.0.drv'...
+logos-radio_module-module-lib> Running phase: qtPreHook
+logos-radio_module-module-lib> Running phase: unpackPhase
+logos-radio_module-module-lib> unpacking source archive /nix/store/vnavm39b6ms0mkqlk2f142la406317kx-radio_module
+logos-radio_module-module-lib> source root is radio_module
+logos-radio_module-module-lib> Running phase: patchPhase
+logos-radio_module-module-lib> Running phase: updateAutotoolsGnuConfigScriptsPhase
+logos-radio_module-module-lib> Running phase: configurePhase
+logos-radio_module-module-lib> Copying qt-typed include files from delivery_module (legacy header-copy)...
+logos-radio_module-module-lib> Running logos-cpp-generator (api-style=qt)...
+logos-radio_module-module-lib> Detected locale "C" with character encoding "ANSI_X3.4-1968", which is not UTF-8.
+logos-radio_module-module-lib> Qt depends on a UTF-8 locale, and has switched to "C.UTF-8" instead.
+logos-radio_module-module-lib> If this causes problems, reconfigure your locale. See the locale(1) manual
+logos-radio_module-module-lib> for more information.
+logos-radio_module-module-lib> Generated logos_sdk.h and logos_sdk.cpp
+logos-radio_module-module-lib> Checking generated files in generated_code:
+logos-radio_module-module-lib> total 28
+logos-radio_module-module-lib> drwxr-xr-x 2 nixbld nixbld 4096 Jul  5 09:41 .
+logos-radio_module-module-lib> drwxr-xr-x 5 nixbld nixbld 4096 Jul  5 09:41 ..
+logos-radio_module-module-lib> -r--r--r-- 1 nixbld nixbld 7661 Jul  5 09:41 delivery_module_api.cpp
+logos-radio_module-module-lib> -r--r--r-- 1 nixbld nixbld 3462 Jul  5 09:41 delivery_module_api.h
+logos-radio_module-module-lib> -rw-r--r-- 1 nixbld nixbld   60 Jul  5 09:41 logos_sdk.cpp
+logos-radio_module-module-lib> -rw-r--r-- 1 nixbld nixbld  267 Jul  5 09:41 logos_sdk.h
+logos-radio_module-module-lib> Creating include directory and moving generated files...
+logos-radio_module-module-lib> Generated include directory:
+logos-radio_module-module-lib> total 28
+logos-radio_module-module-lib> drwxr-xr-x 2 nixbld nixbld 4096 Jul  5 09:41 .
+logos-radio_module-module-lib> drwxr-xr-x 3 nixbld nixbld 4096 Jul  5 09:41 ..
+logos-radio_module-module-lib> -r--r--r-- 1 nixbld nixbld 7661 Jul  5 09:41 delivery_module_api.cpp
+logos-radio_module-module-lib> -r--r--r-- 1 nixbld nixbld 3462 Jul  5 09:41 delivery_module_api.h
+logos-radio_module-module-lib> -rw-r--r-- 1 nixbld nixbld   60 Jul  5 09:41 logos_sdk.cpp
+logos-radio_module-module-lib> -rw-r--r-- 1 nixbld nixbld  267 Jul  5 09:41 logos_sdk.h
+logos-radio_module-module-lib> fixing cmake files...
+logos-radio_module-module-lib> cmake flags: -GNinja -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF -DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_INSTALL_LOCALEDIR=/nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/share/locale -DCMAKE_INSTALL_LIBEXECDIR=/nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/libexec -DCMAKE_INSTALL_LIBDIR=/nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/lib -DCMAKE_INSTALL_DOCDIR=/nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/share/doc/RadioModulePlugin -DCMAKE_INSTALL_INFODIR=/nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/share/info -DCMAKE_INSTALL_MANDIR=/nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/share/man -DCMAKE_INSTALL_INCLUDEDIR=/nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/include -DCMAKE_INSTALL_SBINDIR=/nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/sbin -DCMAKE_INSTALL_BINDIR=/nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/bin -DCMAKE_INSTALL_NAME_DIR=/nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/lib -DCMAKE_POLICY_DEFAULT_CMP0025=NEW -DCMAKE_FIND_FRAMEWORK=LAST -DCMAKE_STRIP=/nix/store/95k9rsn1zsw1yvir8mj824ldhf90i4qw-gcc-wrapper-14.3.0/bin/strip -DCMAKE_RANLIB=/nix/store/95k9rsn1zsw1yvir8mj824ldhf90i4qw-gcc-wrapper-14.3.0/bin/ranlib -DCMAKE_AR=/nix/store/95k9rsn1zsw1yvir8mj824ldhf90i4qw-gcc-wrapper-14.3.0/bin/ar -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_INSTALL_PREFIX=/nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0 -GNinja -DLOGOS_MODULE_ROOT=/nix/store/y17xqc6ihbbc23l8wkbddzb2ya0cbrrf-logos-module-0.1.0 -DLOGOS_CPP_SDK_ROOT=/nix/store/m54kvy5hkgp7sns2fy9qimzlk5qwq0fk-logos-cpp-sdk
+logos-radio_module-module-lib> -- The CXX compiler identification is GNU 14.3.0
+logos-radio_module-module-lib> -- Detecting CXX compiler ABI info
+logos-radio_module-module-lib> -- Detecting CXX compiler ABI info - done
+logos-radio_module-module-lib> -- Check for working CXX compiler: /nix/store/95k9rsn1zsw1yvir8mj824ldhf90i4qw-gcc-wrapper-14.3.0/bin/g++ - skipped
+logos-radio_module-module-lib> -- Detecting CXX compile features
+logos-radio_module-module-lib> -- Detecting CXX compile features - done
+logos-radio_module-module-lib> -- Found logos-module at: /nix/store/y17xqc6ihbbc23l8wkbddzb2ya0cbrrf-logos-module-0.1.0
+logos-radio_module-module-lib> -- Found logos-cpp-sdk at: /nix/store/m54kvy5hkgp7sns2fy9qimzlk5qwq0fk-logos-cpp-sdk
+logos-radio_module-module-lib> -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+logos-radio_module-module-lib> -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+logos-radio_module-module-lib> -- Found Threads: TRUE
+logos-radio_module-module-lib> -- Performing Test HAVE_STDATOMIC
+logos-radio_module-module-lib> -- Performing Test HAVE_STDATOMIC - Success
+logos-radio_module-module-lib> -- Found WrapAtomic: TRUE
+logos-radio_module-module-lib> CMake Warning (dev) at /nix/store/a94d5zmalqava26y3hqsnj5l11l5kl5y-cmake-3.31.7/share/cmake-3.31/Modules/CMakeFindDependencyMacro.cmake:76 (find_package):
+logos-radio_module-module-lib>   Policy CMP0167 is not set: The FindBoost module is removed.  Run "cmake
+logos-radio_module-module-lib>   --help-policy CMP0167" for policy details.  Use the cmake_policy command to
+logos-radio_module-module-lib>   set the policy and suppress this warning.
+logos-radio_module-module-lib> 
+logos-radio_module-module-lib> Call Stack (most recent call first):
+logos-radio_module-module-lib>   /nix/store/m54kvy5hkgp7sns2fy9qimzlk5qwq0fk-logos-cpp-sdk/lib/cmake/logos-cpp-sdk/logos-cpp-sdkConfig.cmake:41 (find_dependency)
+logos-radio_module-module-lib>   /nix/store/m60mi69gfsxvrhrjya5zf01ir6hfxvfs-jv5s1kc4mfc7rykbp8whg7lwz820jqyc-source/cmake/LogosModule.cmake:397 (find_package)
+logos-radio_module-module-lib>   CMakeLists.txt:11 (logos_module)
+logos-radio_module-module-lib> This warning is for project developers.  Use -Wno-dev to suppress it.
+logos-radio_module-module-lib> 
+logos-radio_module-module-lib> -- Found Boost: /nix/store/20cck0r5dvh21c4w7wy8j3f7cc6wb5k2-boost-1.87.0-dev/lib/cmake/Boost-1.87.0/BoostConfig.cmake (found version "1.87.0") found components: system
+logos-radio_module-module-lib> -- Found OpenSSL: /nix/store/gi615r79j260ihhzdkhrg6qva9wfrbyy-openssl-3.5.1/lib/libcrypto.so (found version "3.5.1")
+logos-radio_module-module-lib> -- Found nlohmann_json: /nix/store/r82wggrhgs0v2kkp0f2g9jplc4mfh2gq-nlohmann_json-3.11.3/share/cmake/nlohmann_json/nlohmann_jsonConfig.cmake (found version "3.11.3")
+logos-radio_module-module-lib> -- Logos module radio_module configured successfully
+logos-radio_module-module-lib> -- Configuring done (1.0s)
+logos-radio_module-module-lib> -- Generating done (0.0s)
+logos-radio_module-module-lib> CMake Warning:
+logos-radio_module-module-lib>   Manually-specified variables were not used by the project:
+logos-radio_module-module-lib> 
+logos-radio_module-module-lib>     BUILD_TESTING
+logos-radio_module-module-lib>     CMAKE_C_COMPILER
+logos-radio_module-module-lib>     CMAKE_EXPORT_NO_PACKAGE_REGISTRY
+logos-radio_module-module-lib>     CMAKE_POLICY_DEFAULT_CMP0025
+logos-radio_module-module-lib> 
+logos-radio_module-module-lib> 
+logos-radio_module-module-lib> -- Build files have been written to: /build/radio_module/build
+logos-radio_module-module-lib> cmake: enabled parallel building
+logos-radio_module-module-lib> cmake: enabled parallel installing
+logos-radio_module-module-lib> Running phase: buildPhase
+logos-radio_module-module-lib> build flags: -j16
+logos-radio_module-module-lib> [0/2] Re-checking globbed directories...
+logos-radio_module-module-lib> [1/6] Automatic MOC for target radio_module_module_plugin
+logos-radio_module-module-lib> [2/6] Building CXX object CMakeFiles/radio_module_module_plugin.dir/radio_module_module_plugin_autogen/mocs_compilation.cpp.o
+logos-radio_module-module-lib> [3/6] Building CXX object CMakeFiles/radio_module_module_plugin.dir/generated_code/logos_sdk.cpp.o
+logos-radio_module-module-lib> [4/6] Building CXX object CMakeFiles/radio_module_module_plugin.dir/src/radio_plugin.cpp.o
+logos-radio_module-module-lib> [5/6] Linking CXX shared library modules/radio_module_plugin.so
+logos-radio_module-module-lib> Running phase: glibPreInstallPhase
+logos-radio_module-module-lib> Running phase: installPhase
+logos-radio_module-module-lib> Running phase: qtOwnPathsHook
+logos-radio_module-module-lib> Running phase: fixupPhase
+logos-radio_module-module-lib> wrapping Qt applications in /nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/bin /nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/sbin /nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/libexec /nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/Applications
+logos-radio_module-module-lib> shrinking RPATHs of ELF executables and libraries in /nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0
+logos-radio_module-module-lib> shrinking /nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0/lib/radio_module_plugin.so
+logos-radio_module-module-lib> checking for references to /build/ in /nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0...
+logos-radio_module-module-lib> patching script interpreter paths in /nix/store/x7czwr3pdlf23p9vqpc2v29yyn5jsrg4-logos-radio_module-module-lib-0.1.0
+logos-radio_module-module-lib> Running phase: postPatchMkspecs
+building '/nix/store/0wdvwpzpgnzgy1y8dbv829g6nghywj6n-closure-info.drv'...
+closure-info> structuredAttrs is enabled
+building '/nix/store/vxa0vwp53pmbyv732wwhh003bwny0rh8-logos-radio_module-module-lib-bundle-0.1.0.drv'...
+logos-radio_module-module-lib-bundle> Running phase: patchPhase
+logos-radio_module-module-lib-bundle> Running phase: updateAutotoolsGnuConfigScriptsPhase
+logos-radio_module-module-lib-bundle> Running phase: configurePhase
+logos-radio_module-module-lib-bundle> no configure script, doing nothing
+logos-radio_module-module-lib-bundle> Running phase: buildPhase
+logos-radio_module-module-lib-bundle> Phase 1: Copying executables and libraries...
+logos-radio_module-module-lib-bundle> Phase 2: Tracing shared library dependencies...
+logos-radio_module-module-lib-bundle>   Skipping (host-provided): libQt6RemoteObjects.so.6
+logos-radio_module-module-lib-bundle>   Skipping (host-provided): libQt6Network.so.6
+logos-radio_module-module-lib-bundle>   Skipping (host-provided): libQt6Core.so.6
+logos-radio_module-module-lib-bundle>   libboost_system.so.1.87.0
+logos-radio_module-module-lib-bundle>   Skipping (system): librt.so.1
+logos-radio_module-module-lib-bundle>   Skipping (system): libstdc++.so.6
+logos-radio_module-module-lib-bundle>   Skipping (system): libm.so.6
+logos-radio_module-module-lib-bundle>   Skipping (system): libgcc_s.so.1
+logos-radio_module-module-lib-bundle>   Skipping (system): libpthread.so.0
+logos-radio_module-module-lib-bundle>   Skipping (system): libc.so.6
+logos-radio_module-module-lib-bundle>   libssl.so.3
+logos-radio_module-module-lib-bundle>   libcrypto.so.3
+logos-radio_module-module-lib-bundle>   Skipping (system): libdl.so.2
+logos-radio_module-module-lib-bundle>   Skipping (system): ld-linux-x86-64.so.2
+logos-radio_module-module-lib-bundle> Phase 3: Rewriting dynamic linking references...
+logos-radio_module-module-lib-bundle>   lib/radio_module_plugin.so
+logos-radio_module-module-lib-bundle>   lib/libboost_system.so.1.87.0
+logos-radio_module-module-lib-bundle>   lib/libcrypto.so.3
+logos-radio_module-module-lib-bundle>   lib/libssl.so.3
+logos-radio_module-module-lib-bundle> Phase 5: Rewriting shebangs...
+logos-radio_module-module-lib-bundle> Phase 6: Verifying portability...
+logos-radio_module-module-lib-bundle>   Checking for embedded /nix/ paths...
+logos-radio_module-module-lib-bundle>   WARNING: lib/radio_module_plugin.so contains 28 embedded /nix/ reference(s) in binary data
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/basic_socket_acceptor.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/detail/impl/epoll_reactor.ipp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/detail/impl/eventfd_select_interrupter.ipp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/detail/impl/posix_event.ipp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/detail/impl/posix_mutex.ipp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/detail/impl/posix_thread.ipp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/detail/posix_event.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/detail/reactive_socket_accept_op.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/detail/reactive_socket_recv_op.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/detail/reactive_socket_send_op.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/detail/reactive_socket_service.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/detail/resolver_service.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/impl/connect.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/impl/io_context.ipp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/ip/basic_resolver.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/ip/detail/impl/endpoint.ipp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/ssl/detail/impl/engine.ipp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/ssl/impl/context.ipp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/ssl/impl/host_name_verification.ipp
+logos-radio_module-module-lib-bundle>     /nix/store/20CCK0R5DVH21C4W7WY8J3F7CC6WB5K2-boost-1.87.0-dev/include/boost/asio/ssl/stream.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/R82WGGRHGS0V2KKP0F2G9JPLC4MFH2GQ-nlohmann_json-3.11.3/include/nlohmann/detail/conversions/to_chars.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/R82WGGRHGS0V2KKP0F2G9JPLC4MFH2GQ-nlohmann_json-3.11.3/include/nlohmann/detail/input/binary_reader.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/R82WGGRHGS0V2KKP0F2G9JPLC4MFH2GQ-nlohmann_json-3.11.3/include/nlohmann/detail/input/json_sax.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/R82WGGRHGS0V2KKP0F2G9JPLC4MFH2GQ-nlohmann_json-3.11.3/include/nlohmann/detail/input/lexer.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/R82WGGRHGS0V2KKP0F2G9JPLC4MFH2GQ-nlohmann_json-3.11.3/include/nlohmann/detail/iterators/iter_impl.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/R82WGGRHGS0V2KKP0F2G9JPLC4MFH2GQ-nlohmann_json-3.11.3/include/nlohmann/detail/output/binary_writer.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/R82WGGRHGS0V2KKP0F2G9JPLC4MFH2GQ-nlohmann_json-3.11.3/include/nlohmann/detail/output/serializer.hpp
+logos-radio_module-module-lib-bundle>     /nix/store/R82WGGRHGS0V2KKP0F2G9JPLC4MFH2GQ-nlohmann_json-3.11.3/include/nlohmann/json.hpp
+logos-radio_module-module-lib-bundle>   WARNING: lib/libcrypto.so.3 contains 9 embedded /nix/ reference(s) in binary data
+logos-radio_module-module-lib-bundle>     /nix/store/gi615r79j260ihhzdkhrg6qva9wfrbyy-openssl-3.5.1/etc/ssl
+logos-radio_module-module-lib-bundle>     /nix/store/gi615r79j260ihhzdkhrg6qva9wfrbyy-openssl-3.5.1/etc/ssl/certs
+logos-radio_module-module-lib-bundle>     /nix/store/gi615r79j260ihhzdkhrg6qva9wfrbyy-openssl-3.5.1/etc/ssl/ct_log_list.cnf
+logos-radio_module-module-lib-bundle>     /nix/store/gi615r79j260ihhzdkhrg6qva9wfrbyy-openssl-3.5.1/etc/ssl/private
+logos-radio_module-module-lib-bundle>     /nix/store/gi615r79j260ihhzdkhrg6qva9wfrbyy-openssl-3.5.1/lib/engines-3
+logos-radio_module-module-lib-bundle>     /nix/store/gi615r79j260ihhzdkhrg6qva9wfrbyy-openssl-3.5.1/lib/ossl-modules
+logos-radio_module-module-lib-bundle>     ENGINESDIR: "/nix/store/gi615r79j260ihhzdkhrg6qva9wfrbyy-openssl-3.5.1/lib/engines-3"
+logos-radio_module-module-lib-bundle>     MODULESDIR: "/nix/store/gi615r79j260ihhzdkhrg6qva9wfrbyy-openssl-3.5.1/lib/ossl-modules"
+logos-radio_module-module-lib-bundle>     OPENSSLDIR: "/nix/store/gi615r79j260ihhzdkhrg6qva9wfrbyy-openssl-3.5.1/etc/ssl"
+logos-radio_module-module-lib-bundle>   All references are portable.
+logos-radio_module-module-lib-bundle> Done!
+logos-radio_module-module-lib-bundle> Running phase: installPhase
+building '/nix/store/32497dz2j9jx5myjqbxv48gy7xa8rn8b-logos-radio_module-module-lib-lgx-0.1.0.drv'...
+logos-radio_module-module-lib-lgx> Running phase: patchPhase
+logos-radio_module-module-lib-lgx> Running phase: updateAutotoolsGnuConfigScriptsPhase
+logos-radio_module-module-lib-lgx> Running phase: configurePhase
+logos-radio_module-module-lib-lgx> no configure script, doing nothing
+logos-radio_module-module-lib-lgx> Running phase: buildPhase
+logos-radio_module-module-lib-lgx> Created package: logos-radio_module-module-lib.lgx
+logos-radio_module-module-lib-lgx> Patching manifest from metadata...
+logos-radio_module-module-lib-lgx> Adding variant linux-amd64 to logos-radio_module-module-lib.lgx (main: radio_module_plugin.so)...
+logos-radio_module-module-lib-lgx> Added variant 'linux-amd64' to logos-radio_module-module-lib.lgx
+logos-radio_module-module-lib-lgx> Done: logos-radio_module-module-lib.lgx
+logos-radio_module-module-lib-lgx> Running phase: installPhase
