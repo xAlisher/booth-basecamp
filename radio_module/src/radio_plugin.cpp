@@ -260,9 +260,14 @@ QString RadioModulePlugin::startStream(const QString& configJson)
     // Onion mode must not deanonymize via the machine hostname (Senty FINDING-3) — it ships in
     // every announce and shows in the listener UI. Use a neutral label.
     m_hostLabel   = (m_privacy == "onion") ? QStringLiteral("anonymous") : QSysInfo::machineHostName();
-    // Public → directory topic; private → unguessable per-stream topic (shared out-of-band).
+    // Public → directory topic; private → a topic the broadcaster names (#49; shared out-of-band),
+    // falling back to the unguessable per-stream path if they didn't name one.
+    QString priv = cfg.value("privateTopic").toString().trimmed().toLower();
+    priv.replace(QRegularExpression(QStringLiteral("[^a-z0-9-]+")), QStringLiteral("-"));
+    priv.remove(QRegularExpression(QStringLiteral("^-+|-+$")));
+    const QString privSeg = priv.isEmpty() ? m_path : priv.left(64);
     m_announceTopic = (m_visibility == "private")
-                      ? QStringLiteral("/radio-basecamp/1/%1/json").arg(m_path)
+                      ? QStringLiteral("/radio-basecamp/1/%1/json").arg(privSeg)
                       : directoryTopic();
 
     const QString configPath = writeMediaMtxConfig();
@@ -307,6 +312,7 @@ QJsonObject RadioModulePlugin::buildCard() const
         {"srtUrl",  QStringLiteral("srt://%1:%2?streamid=publish:%3:publisher:%4").arg(ip).arg(srt).arg(m_path).arg(m_streamKey)},
         {"hlsUrl",  QStringLiteral("http://%1:%2/%3/index.m3u8").arg(ip).arg(hls).arg(m_path)},
         {"name", m_streamName}, {"description", m_description}, {"privacy", m_privacy},
+        {"visibility", m_visibility}, {"announceTopic", m_announceTopic},   // #49 surface the (private) topic to share
     };
 }
 
@@ -658,7 +664,7 @@ QString RadioModulePlugin::buildAnnouncePayload(int seq) const
     QJsonObject a{
         {"v", 1}, {"name", m_streamName}, {"host", m_hostLabel}, {"path", m_path},
         {"streamUrl", hls}, {"visibility", m_visibility}, {"description", m_description},
-        {"startedAt", m_startedAt}, {"seq", seq}
+        {"startedAt", m_startedAt}, {"seq", seq}, {"announceTopic", m_announceTopic}   // #44 receiver filters by topic
     };
     const QString np = readNowPlaying();
     if (!np.isEmpty()) a["nowPlaying"] = np;   // #35 current show (optional; heartbeat propagates it ≤15s)

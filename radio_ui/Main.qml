@@ -30,6 +30,7 @@ Item {
         var cfg = JSON.stringify({
             name: nameField.text,
             visibility: visBox.currentIndex === 1 ? "private" : "public",
+            privateTopic: visBox.currentIndex === 1 ? privTopicField.text.trim() : "",
             privacy: onion ? "onion" : "public",
             description: descField.text
         })
@@ -144,6 +145,13 @@ Item {
                             ? "🧅 Listeners reach you over Tor — your IP stays hidden and it works through NAT (no port-forwarding). First connect is slower."
                             : "⚠ Direct mode is LAN-only and exposes your IP to listeners. Use it only for local/low-latency streams."
                     }
+                    // #49 private → name the topic listeners will subscribe to
+                    ColumnLayout {
+                        visible: visBox.currentIndex === 1
+                        Layout.fillWidth: true; spacing: 4
+                        LogosText { text: "Private topic name"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                        LogosTextField { id: privTopicField; Layout.fillWidth: true; placeholderText: "e.g. my-secret-room — share with listeners" }
+                    }
                     LogosText { text: "Description (optional)"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
                     LogosTextField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
                     LogosButton { text: "Start"; enabled: nameField.text.length > 0; onClicked: root.startStream() }
@@ -194,6 +202,11 @@ Item {
                             label: "Stream Key"; value: root.streamCard ? root.streamCard.streamKey : ""
                             secret: true; canRegen: true
                             onRegen: root.regenerateKey()
+                        }
+                        CredBlock {   // #49 private station: the announce topic to share out-of-band with listeners
+                            visible: root.streamCard && root.streamCard.visibility === "private"
+                            label: "Private topic — share with listeners"
+                            value: root.streamCard ? (root.streamCard.announceTopic || "") : ""
                         }
                         ColumnLayout {
                             visible: root.streamPrivacy === "onion"
