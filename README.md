@@ -1,14 +1,18 @@
 # radio-basecamp
 
 Decentralized **audio broadcast** module for [Logos Basecamp](https://github.com/logos-co/logos-app).
-A host broadcasts a stream; listeners **discover it over LogosMessaging by topic** — no central
-index, no account — and play it. The differentiator is **discovery, not delivery**.
+A host broadcasts a stream and **announces it over LogosMessaging by topic** — no central index, no
+account. **Listening lives in the [Receiver](https://github.com/xAlisher/receiver-basecamp) module** —
+Radio is broadcast-only.
 
-> Status (2026-06-10): **P0 vertical slice complete and demoed cross-machine** — a host broadcasts
-> and a *separate machine* discovers it over LogosMessaging and plays it, with no central index.
-> ⚠️ Runs on Basecamp **`pre-release-1dc1c08-268`** — newer builds crash any `delivery_module`
-> consumer (see [Compatibility](#compatibility)). v1 is **audio-first**. Implementation tracked in
-> [`docs/plans/radio-implementation.md`](docs/plans/radio-implementation.md).
+> **📦 Install:** grab the signed **[v0.2.0 release](https://github.com/xAlisher/radio-basecamp/releases/tag/v0.2.0)**
+> (`radio_module` + `radio_ui`, ✓ Signed by xAlisher) — see [Install](#install-into-logos-basecamp).
+> Universal API (`modules().radio_module`) + design-system UI. Validated on Basecamp v0.2.0: Start →
+> MediaMTX → credentials → onion published.
+
+> Status (2026-07-05): **v0.2.0 — broadcast-only, universal API + design-system, on the current v0.2
+> platform.** The old **268-only** caveat is resolved (the v0.2 migration fixed the `delivery_module`
+> consumer hang). Broadcasting-only: the Listen tab was removed (listening is the Receiver's job).
 
 ---
 
@@ -142,6 +146,19 @@ cd ../radio_ui   && nix run .     # launches the UI in logos-standalone-app
 
 ### Install into Logos Basecamp
 
+**Signed v0.2.0 release** (✓ Signed by xAlisher — no `--allow-unsigned`). Runtime deps on PATH:
+`mediamtx` (broadcast server) + `tor` (for `.onion`). Install both — `radio_ui` depends on `radio_module`:
+
+```bash
+PROF=~/.local/share/Logos/LogosBasecamp
+base=https://github.com/xAlisher/radio-basecamp/releases/download/v0.2.0
+for f in radio_module-0.1.0 radio_ui-0.2.0; do
+  curl -fL -o "$f-linux-amd64.lgx" "$base/$f-linux-amd64.lgx"
+  lgpm --modules-dir "$PROF/modules" --ui-plugins-dir "$PROF/plugins" install --file "$f-linux-amd64.lgx"
+done
+```
+Then launch Basecamp and open **Radio**.
+
 From source:
 
 ```bash
@@ -149,8 +166,7 @@ From source:
 ./scripts/relaunch.sh   # kills logos_host + restarts the AppImage
 ```
 
-From the released LGXs (this repo's [Releases](https://github.com/xAlisher/radio-basecamp/releases)),
-or via the catalog:
+From the catalog:
 
 ```bash
 lgpd repo add https://raw.githubusercontent.com/xAlisher/logos-basecamp-modules/main/logos-repo.json
