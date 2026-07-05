@@ -164,6 +164,9 @@ QString RadioModulePlugin::writeMediaMtxConfig() const
       << "apiAddress: :"    << port("RADIO_API_PORT",  9997) << "\n"
       << "api: yes\n"
       << "hls: yes\n"
+      // #38: always-remux HLS so the FIRST listener never hits a cold/empty playlist
+      // (on-demand HLS goes silent until a reader warms it ~24s; receivers got intermittent silence).
+      << "hlsAlwaysRemux: yes\n"
       // #17 mpegts (not lowLatency) so listeners fetch whole segments and can buffer over high-RTT
       // Tor; a deep playlist (24 × 1s) lets the listener start up to ~20s behind live to absorb jitter.
       << "hlsVariant: mpegts\n"
