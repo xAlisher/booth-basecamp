@@ -44,7 +44,7 @@ public:
     // RadioModuleInterface
     Q_INVOKABLE QString ping() override;
     Q_INVOKABLE QString startStream(const QString& configJson) override;
-    Q_INVOKABLE QString connectKeycard() override;   // #24 derive bc:radio from the card, return fingerprint
+    Q_INVOKABLE QString connectKeycard(const QString& privHex) override;   // #24 seed identity from the card-derived key
     Q_INVOKABLE QString stopStream() override;
     Q_INVOKABLE QString regenerateKey() override;
     Q_INVOKABLE QString regenerateOnion() override;
@@ -138,8 +138,7 @@ private:
     // #24 station identity — sign announces so listeners verify the host (pubkey, not name).
     StationIdentity m_identity;
     QString         m_keySource;          // "anonymous" (v:1 unsigned) | "autogen" | "keycard"
-    QString identityKeyPath() const;                     // per-profile autogen/keycard privkey (0600)
-    void    loadKeycardIdentity(const QJsonObject& cfg); // #24 Stage 3 — derive bc:radio via keycard_module
+    QString identityKeyPath() const;                     // per-profile autogen privkey (0600)
 
     // Discovery (#5)
     LogosAPIClient* m_delivery = nullptr;

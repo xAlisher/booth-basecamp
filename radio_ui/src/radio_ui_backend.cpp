@@ -70,11 +70,10 @@ void RadioUiBackend::applyStreamCard(const QString& json)
 }
 
 // ── mutators: fire-and-forget (SLOT returns immediately; state lands via the poll PROPs) ──────────
-QString RadioUiBackend::connectKeycard()
+QString RadioUiBackend::connectKeycard(QString privHex)
 {
     if (!isContextReady()) return QStringLiteral("{\"ok\":false,\"error\":\"context_not_ready\"}");
-    emit activity(QStringLiteral("Requesting Keycard…"));
-    modules().radio_module.connectKeycardAsync([this](QString r) {
+    modules().radio_module.connectKeycardAsync(privHex, [this](QString r) {
         const QJsonObject o = QJsonDocument::fromJson(r.toUtf8()).object();
         if (o.value(QStringLiteral("ok")).toBool()) {
             setKeycardFingerprint(o.value(QStringLiteral("fingerprint")).toString());

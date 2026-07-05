@@ -19,7 +19,7 @@ public:
 
 public slots:
     QString startStream(QString configJson) override;   // by-value override (rep-slot-byvalue-override)
-    QString connectKeycard() override;                   // #24 forward to radio_module → keycardFingerprint
+    QString connectKeycard(QString privHex) override;    // #24 forward the card-derived key → keycardFingerprint
     QString stopStream() override;
     QString regenerateKey() override;
     QString regenerateOnion() override;

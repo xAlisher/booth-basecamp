@@ -25,6 +25,8 @@ Item {
                                           ? JSON.parse(backend.streamCardJson) : null
     readonly property var     keySrc: ["anonymous", "autogen", "keycard"]   // #24 dropdown index → tier
     readonly property string  keycardFp: backend ? backend.keycardFingerprint : ""   // #24 set after Connect Keycard
+    property string keycardAuthId: ""
+    property string keycardAuthStatus: ""   // "" | pending | complete | error
 
     // ── Backend actions (SLOTs via logos.watch) ────────────────────────────────
     function startStream() {
@@ -44,6 +46,39 @@ Item {
     function stopStream() { logos.watch(backend.stopStream(), function(){ logEvent("Stream stopped", "info") }, function(){}) }
     function regenerateKey() { logos.watch(backend.regenerateKey(), function(){ logEvent("Stream key rotated — re-enter the new key in your streaming software", "warning") }, function(){}) }
     function regenerateOnion() { logos.watch(backend.regenerateOnion(), function(){ logEvent("Rotating Tor address — listeners will rediscover", "warning") }, function(){}) }
+
+    // #7/#24 Connect Keycard — beacon-style visible request: requestAuth pops the keycard UI, then poll
+    // checkAuthStatus for the derived bc:radio key; hand it to radio_module to seed the signing identity.
+    function callModuleParse(raw) { try { var t = JSON.parse(raw); return typeof t === 'string' ? JSON.parse(t) : t } catch (e) { return null } }
+    function connectKeycard() {
+        root.keycardAuthStatus = "pending"
+        var r = root.callModuleParse(logos.callModule("keycard", "requestAuth", ["bc:radio", "radio_ui"]))
+        if (r && r.authId) {
+            root.keycardAuthId = r.authId
+            keycardAuthPoll.start()
+            logEvent("Keycard request sent — approve it on your Keycard", "info")
+        } else {
+            root.keycardAuthStatus = "error"
+            logEvent("Couldn't reach the Keycard module — is it installed + a card inserted?", "error")
+        }
+    }
+    Timer {
+        id: keycardAuthPoll
+        interval: 1000; repeat: true
+        onTriggered: {
+            if (root.keycardAuthId === "") { stop(); return }
+            var r = root.callModuleParse(logos.callModule("keycard", "checkAuthStatus", [root.keycardAuthId]))
+            if (!r) return
+            if (r.status === "complete") {
+                stop(); root.keycardAuthId = ""; root.keycardAuthStatus = "complete"
+                logos.watch(backend.connectKeycard(r.key),   // radio_module seeds identity → keycardFingerprint PROP
+                            function(){ logEvent("Keycard linked", "success") }, function(){})
+            } else if (r.status === "failed" || r.status === "rejected") {
+                stop(); root.keycardAuthId = ""; root.keycardAuthStatus = "error"
+                logEvent("Keycard auth " + r.status, "error")
+            }
+        }
+    }
 
     // status → text + Theme.palette colour (LogosBadge pattern, per delivery-demo/receiver)
     function deliveryColor() {
@@ -167,9 +202,10 @@ Item {
                             visible: keyBox.currentIndex === 2
                             Layout.fillWidth: true; spacing: 8
                             LogosButton {
-                                text: root.keycardFp.length > 0 ? "✓ Keycard linked" : "Connect Keycard"
-                                enabled: root.keycardFp.length === 0
-                                onClicked: logos.watch(backend.connectKeycard(), function(){}, function(){})
+                                text: root.keycardFp.length > 0 ? "✓ Keycard linked"
+                                    : root.keycardAuthStatus === "pending" ? "Waiting for Keycard…" : "Connect Keycard"
+                                enabled: root.keycardFp.length === 0 && root.keycardAuthStatus !== "pending"
+                                onClicked: root.connectKeycard()
                             }
                             LogosText {
                                 visible: root.keycardFp.length > 0

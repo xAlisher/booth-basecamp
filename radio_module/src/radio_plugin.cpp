@@ -248,7 +248,7 @@ QString RadioModulePlugin::startStream(const QString& configJson)
         m_identity = StationIdentity();
         m_identity.loadOrCreate(identityKeyPath());
     } else if (m_keySource == QLatin1String("keycard")) {
-        if (!m_identity.isValid()) loadKeycardIdentity(cfg);   // reuse a Connect-Keycard-derived key if present
+        // identity was seeded by connectKeycard() (radio_ui's requestAuth flow). Keep it; absent → unsigned.
     } else {
         m_identity = StationIdentity();   // anonymous → v:1 unsigned
     }
@@ -388,40 +388,17 @@ QString RadioModulePlugin::identityKeyPath() const
            + "/radio_module/station.key";  // #24 per-profile signing key (0600)
 }
 
-// #24 Stage 3 — Keycard-derived station identity. The keycard module derives a deterministic secp256k1
-// key from the card for domain "bc:radio" (SHA256(card_key || domain)); we persist it to identityKeyPath()
-// and load it like the autogen key, so heartbeats sign without a per-beat tap (the card is only needed once
-// to seed the key). If the card/derivation isn't available the tier stays unsigned (m_identity invalid).
-void RadioModulePlugin::loadKeycardIdentity(const QJsonObject& cfg)
-{
-    Q_UNUSED(cfg);
-    if (!logosAPI) { qWarning() << "RadioModulePlugin: keycard identity — no logosAPI"; return; }
-    auto* kc = logosAPI->getClient("keycard_module");
-    if (!kc) { qWarning() << "RadioModulePlugin: keycard_module unavailable — station stays unsigned"; return; }
-    // deriveKey("bc:radio") → {"key":"<32-byte hex>"} — an EIP-1581 domain key, deterministic per card, so the
-    // station keeps the SAME fingerprint on any device holding this card. Requires the card present + unlocked
-    // (the keycard module owns the PIN / secure-channel session). Signing stays host-side; the key lives in
-    // memory only and is re-derived each session — losing the device never leaks the identity.
-    const QVariant r = kc->invokeRemoteMethod("keycard_module", "deriveKey", QStringLiteral("bc:radio"));
-    const QJsonObject o = QJsonDocument::fromJson(r.toString().toUtf8()).object();
-    const QString keyHex = o.value(QStringLiteral("key")).toString();
-    if (keyHex.size() == 64 && m_identity.fromSeckeyHex(keyHex))
-        qDebug() << "RadioModulePlugin: keycard identity derived, pubkey" << m_identity.pubkeyHex();
-    else
-        qWarning() << "RadioModulePlugin: keycard derive failed (card locked/absent?) — station stays unsigned";
-}
-
-// #24 explicit Connect-Keycard step (radio_ui button) — derive bc:radio now + return the fingerprint so the
-// broadcaster sees it BEFORE Start. The derived key is held for the session; a later Start reuses it.
-QString RadioModulePlugin::connectKeycard()
+// #24 explicit Connect-Keycard step — radio_ui runs the visible requestAuth→checkAuthStatus flow (like
+// beacon) and passes the derived 32-byte hex key here. We seed the identity + return the fingerprint so the
+// broadcaster sees it BEFORE Start; the seeded key is held for the session (a later Start reuses it).
+QString RadioModulePlugin::connectKeycard(const QString& privHex)
 {
     m_keySource = QStringLiteral("keycard");
     m_identity  = StationIdentity();
-    loadKeycardIdentity(QJsonObject());
-    if (m_identity.isValid())
+    if (m_identity.fromSeckeyHex(privHex.trimmed()))
         return ok(QStringLiteral("\"fingerprint\":\"%1\",\"pubkey\":\"%2\"")
                   .arg(StationIdentity::fingerprint(m_identity.pubkeyHex()), m_identity.pubkeyHex()));
-    return err(QStringLiteral("keycard_unavailable"));
+    return err(QStringLiteral("bad_key"));
 }
 
 void RadioModulePlugin::saveStreamState(bool running) const
@@ -467,8 +444,7 @@ void RadioModulePlugin::resumeStreamIfPersisted()
     m_identity      = StationIdentity();
     if (m_keySource == QLatin1String("autogen"))
         m_identity.loadOrCreate(identityKeyPath());        // device key persists → same pubkey on resume
-    else if (m_keySource == QLatin1String("keycard"))
-        loadKeycardIdentity(QJsonObject());                // re-derive if the card is present; else unsigned until re-Start
+    // keycard tier can't re-derive at boot (needs the card interaction) → unsigned until a re-Start via Connect Keycard
     m_runtimeDir    = QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/radio_module/" + m_path;
     m_announceSeq   = 0;
     // Re-spawn the origin with the SAME path + key so OBS reconnects without reconfiguration.

@@ -17,7 +17,7 @@ class RadioUi
     SIGNAL(activity(QString line))                   // human-readable log line for the UI
 
     SLOT(QString startStream(QString configJson))    // spawns MediaMTX server-side → fire-and-forget
-    SLOT(QString connectKeycard())                   // #24 derive bc:radio from the card → keycardFingerprint
+    SLOT(QString connectKeycard(QString privHex))    // #24 seed identity from the card-derived key → keycardFingerprint
     SLOT(QString stopStream())
     SLOT(QString regenerateKey())                    // rotate the RTMP publish key
     SLOT(QString regenerateOnion())                  // rotate the .onion identity (spawns tor)

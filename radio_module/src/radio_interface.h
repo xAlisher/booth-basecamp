@@ -32,9 +32,10 @@ public:
     /** Start the origin + mint ingest. @param configJson {name, visibility:"public"|"private", description?}
      *  @return {ok, path, whipUrl, rtmpUrl, srtUrl, streamKey} (#2 #3) */
     Q_INVOKABLE virtual QString startStream(const QString& configJson) = 0;
-    /** #24 Derive the station identity from the Keycard (bc:radio domain). Needs the card unlocked.
-     *  @return {ok, fingerprint, pubkey} on success, else {ok:false, error}. Signing key stays in C++. */
-    Q_INVOKABLE virtual QString connectKeycard() = 0;
+    /** #24 Seed the station identity from a Keycard-derived key (bc:radio). radio_ui runs the visible
+     *  requestAuth→checkAuthStatus flow (like beacon) and passes the derived 32-byte hex key here.
+     *  @return {ok, fingerprint, pubkey} on success, else {ok:false, error}. */
+    Q_INVOKABLE virtual QString connectKeycard(const QString& privHex) = 0;
     /** Stop origin + announce. @return {ok} (#2) */
     Q_INVOKABLE virtual QString stopStream() = 0;
     /** Rotate the secret publish key (#17). Rewrites MediaMTX auth + restarts it; the public path /
