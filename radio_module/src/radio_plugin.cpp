@@ -260,9 +260,14 @@ QString RadioModulePlugin::startStream(const QString& configJson)
     // Onion mode must not deanonymize via the machine hostname (Senty FINDING-3) — it ships in
     // every announce and shows in the listener UI. Use a neutral label.
     m_hostLabel   = (m_privacy == "onion") ? QStringLiteral("anonymous") : QSysInfo::machineHostName();
-    // Public → directory topic; private → unguessable per-stream topic (shared out-of-band).
+    // Public → directory topic; private → a topic the broadcaster names (#49; shared out-of-band),
+    // falling back to the unguessable per-stream path if they didn't name one.
+    QString priv = cfg.value("privateTopic").toString().trimmed().toLower();
+    priv.replace(QRegularExpression(QStringLiteral("[^a-z0-9-]+")), QStringLiteral("-"));
+    priv.remove(QRegularExpression(QStringLiteral("^-+|-+$")));
+    const QString privSeg = priv.isEmpty() ? m_path : priv.left(64);
     m_announceTopic = (m_visibility == "private")
-                      ? QStringLiteral("/radio-basecamp/1/%1/json").arg(m_path)
+                      ? QStringLiteral("/radio-basecamp/1/%1/json").arg(privSeg)
                       : directoryTopic();
 
     const QString configPath = writeMediaMtxConfig();
