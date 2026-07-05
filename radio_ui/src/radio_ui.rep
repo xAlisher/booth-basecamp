@@ -11,11 +11,13 @@ class RadioUi
     PROP(QString onionError="" READONLY)             // non-empty → Tor setup failed
     PROP(QString deliveryState="offline" READONLY)   // offline | ready | connected (announce path)
     PROP(QString streamCardJson="" READONLY)         // "" = no card (show form); else JSON of the card
+    PROP(QString keycardFingerprint="" READONLY)     // #24 set after Connect Keycard ("" = not linked)
     PROP(QString lastError="" READONLY)
 
     SIGNAL(activity(QString line))                   // human-readable log line for the UI
 
     SLOT(QString startStream(QString configJson))    // spawns MediaMTX server-side → fire-and-forget
+    SLOT(QString connectKeycard())                   // #24 derive bc:radio from the card → keycardFingerprint
     SLOT(QString stopStream())
     SLOT(QString regenerateKey())                    // rotate the RTMP publish key
     SLOT(QString regenerateOnion())                  // rotate the .onion identity (spawns tor)

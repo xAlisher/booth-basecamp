@@ -24,6 +24,7 @@ Item {
     readonly property var     streamCard: (backend && backend.streamCardJson && backend.streamCardJson.length > 0)
                                           ? JSON.parse(backend.streamCardJson) : null
     readonly property var     keySrc: ["anonymous", "autogen", "keycard"]   // #24 dropdown index → tier
+    readonly property string  keycardFp: backend ? backend.keycardFingerprint : ""   // #24 set after Connect Keycard
 
     // ── Backend actions (SLOTs via logos.watch) ────────────────────────────────
     function startStream() {
@@ -159,19 +160,36 @@ Item {
                                 ? "Fully anonymous — but listeners can't verify or pin you, and a name can be impersonated."
                                 : keyBox.currentIndex === 1
                                 ? "A device-local key signs your announces — listeners verify + pin you across name/Tor changes (this device only)."
-                                : "🔑 A portable key derived from your Keycard (same fingerprint on any device). Unlock your Keycard before Start."
+                                : "🔑 A portable key derived from your Keycard (same fingerprint on any device)."
+                        }
+                        // #7/#24 explicit Connect-Keycard step — derive bc:radio now + show the fingerprint before Start
+                        RowLayout {
+                            visible: keyBox.currentIndex === 2
+                            Layout.fillWidth: true; spacing: 8
+                            LogosButton {
+                                text: root.keycardFp.length > 0 ? "✓ Keycard linked" : "Connect Keycard"
+                                enabled: root.keycardFp.length === 0
+                                onClicked: logos.watch(backend.connectKeycard(), function(){}, function(){})
+                            }
+                            LogosText {
+                                visible: root.keycardFp.length > 0
+                                Layout.alignment: Qt.AlignVCenter
+                                text: root.keycardFp; color: Theme.palette.success; font.pixelSize: Theme.typography.secondaryText
+                            }
                         }
                     }
                     // #49 private → name the topic listeners will subscribe to
                     ColumnLayout {
                         visible: visBox.currentIndex === 1
                         Layout.fillWidth: true; spacing: 4
-                        LogosText { text: "Private topic name"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
-                        LogosTextField { id: privTopicField; Layout.fillWidth: true; placeholderText: "e.g. my-secret-room — share with listeners" }
+                        LogosText { text: "Private directory name"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                        LogosTextField { id: privTopicField; Layout.fillWidth: true; placeholderText: "e.g. my-secret-room — a private directory to share" }
                     }
                     LogosText { text: "Description (optional)"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
                     LogosTextField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
-                    LogosButton { text: "Start"; enabled: nameField.text.length > 0; onClicked: root.startStream() }
+                    LogosButton { text: "Start"
+                        enabled: nameField.text.length > 0 && (keyBox.currentIndex !== 2 || root.keycardFp.length > 0)  // #7 keycard tier needs Connect first
+                        onClicked: root.startStream() }
                 }
 
                 // credentials — bordered card (delivery-demo style), each field a labeled input block
@@ -222,7 +240,7 @@ Item {
                         }
                         CredBlock {   // #49 private station: the announce topic to share out-of-band with listeners
                             visible: root.streamCard && root.streamCard.visibility === "private"
-                            label: "Private topic — share with listeners"
+                            label: "Private directory — share with listeners"
                             value: root.streamCard ? (root.streamCard.announceTopic || "") : ""
                         }
                         CredBlock {   // #24 station fingerprint — the out-of-band anchor listeners verify/pin you by

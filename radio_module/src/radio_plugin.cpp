@@ -244,11 +244,14 @@ QString RadioModulePlugin::startStream(const QString& configJson)
 
     // #24 station identity tier: anonymous (v:1 unsigned) | autogen (device-local key) | keycard (Stage 3).
     m_keySource = cfg.value("keySource").toString(QStringLiteral("autogen"));
-    m_identity  = StationIdentity();
-    if (m_keySource == QLatin1String("autogen"))
+    if (m_keySource == QLatin1String("autogen")) {
+        m_identity = StationIdentity();
         m_identity.loadOrCreate(identityKeyPath());
-    else if (m_keySource == QLatin1String("keycard"))
-        loadKeycardIdentity(cfg);   // Stage 3 — falls back to unsigned if the card/derivation isn't available
+    } else if (m_keySource == QLatin1String("keycard")) {
+        if (!m_identity.isValid()) loadKeycardIdentity(cfg);   // reuse a Connect-Keycard-derived key if present
+    } else {
+        m_identity = StationIdentity();   // anonymous → v:1 unsigned
+    }
 
     // #17 — reuse the persisted publish identity so the stream key/path stay STABLE across restarts
     // (recoverable even if auto-resume raced). Mint fresh only when none exists; "⟳ New" rotates it.
@@ -406,6 +409,19 @@ void RadioModulePlugin::loadKeycardIdentity(const QJsonObject& cfg)
         qDebug() << "RadioModulePlugin: keycard identity derived, pubkey" << m_identity.pubkeyHex();
     else
         qWarning() << "RadioModulePlugin: keycard derive failed (card locked/absent?) — station stays unsigned";
+}
+
+// #24 explicit Connect-Keycard step (radio_ui button) — derive bc:radio now + return the fingerprint so the
+// broadcaster sees it BEFORE Start. The derived key is held for the session; a later Start reuses it.
+QString RadioModulePlugin::connectKeycard()
+{
+    m_keySource = QStringLiteral("keycard");
+    m_identity  = StationIdentity();
+    loadKeycardIdentity(QJsonObject());
+    if (m_identity.isValid())
+        return ok(QStringLiteral("\"fingerprint\":\"%1\",\"pubkey\":\"%2\"")
+                  .arg(StationIdentity::fingerprint(m_identity.pubkeyHex()), m_identity.pubkeyHex()));
+    return err(QStringLiteral("keycard_unavailable"));
 }
 
 void RadioModulePlugin::saveStreamState(bool running) const

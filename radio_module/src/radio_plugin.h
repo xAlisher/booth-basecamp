@@ -44,6 +44,7 @@ public:
     // RadioModuleInterface
     Q_INVOKABLE QString ping() override;
     Q_INVOKABLE QString startStream(const QString& configJson) override;
+    Q_INVOKABLE QString connectKeycard() override;   // #24 derive bc:radio from the card, return fingerprint
     Q_INVOKABLE QString stopStream() override;
     Q_INVOKABLE QString regenerateKey() override;
     Q_INVOKABLE QString regenerateOnion() override;
