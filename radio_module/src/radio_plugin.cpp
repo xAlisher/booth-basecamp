@@ -714,6 +714,7 @@ QString RadioModulePlugin::buildAnnouncePayload(int seq) const
     // strips "sig", re-serializes identically, and verifies against the embedded pubkey. Anonymous tier → v:1.
     if (m_identity.isValid()) {
         a[QStringLiteral("v")] = 2;
+        a[QStringLiteral("keySource")] = m_keySource;   // #4 keycard vs autogen — inside the signed bytes (unspoofable)
         a[QStringLiteral("pubkey")] = m_identity.pubkeyHex();
         const QByteArray canon = QJsonDocument(a).toJson(QJsonDocument::Compact);  // "sig" not present yet
         a[QStringLiteral("sig")] = m_identity.signHex(canon);
