@@ -3,19 +3,18 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 import Logos.Theme      // logos-design-system (native on RC3+ Basecamp) — skill: logos-design-system-adoption
-import Logos.Controls   // LogosText / LogosButton / LogosTextField
+import Logos.Controls   // LogosText / LogosButton / LogosBadge / LogosComboBox / LogosTextField
 
-// radio_ui — broadcast-only (#39), universal (#40), design-system (#41). A focused broadcaster:
-// data layer is the universal QtRO backend (logos.module("radio_ui") PROPs/SLOTs); visuals are the
-// platform design system (Theme.palette tokens, zero hex; LogosText/LogosButton/LogosTextField).
-// Status pills stay custom (multi-state, semantic-coloured) but adopt Theme tokens + shape.
+// radio_ui — broadcast-only (#39), universal (#40), design-system (#41). Focused broadcaster.
+// Data layer: universal QtRO backend (logos.module("radio_ui") PROPs/SLOTs). Visuals: pure design
+// system — LogosBadge status, LogosComboBox choices, LogosTextField fields, LogosButton/LogosText,
+// Theme.palette tokens (0 hex). Reference: logos-delivery-demo (no invented widgets).
 Item {
     id: root
     width: 480; height: 640
 
     // ── Universal backend + state bound to its PROPs ───────────────────────────
     readonly property var    backend: logos.module("radio_ui")
-    readonly property bool    ready:   logos.isViewModuleReady("radio_ui")
     readonly property string  streamState:   backend ? backend.streamState   : "idle"
     readonly property string  streamPrivacy: backend ? backend.streamPrivacy : "public"
     readonly property string  onionAddr:     backend ? backend.onionAddr     : ""
@@ -27,10 +26,10 @@ Item {
 
     // ── Backend actions (SLOTs via logos.watch) ────────────────────────────────
     function startStream() {
-        var onion = privacyGroup.checkedButton === onionBtn
+        var onion = privacyBox.currentIndex === 0   // model[0] = Onion (default)
         var cfg = JSON.stringify({
             name: nameField.text,
-            visibility: visGroup.checkedButton === privateBtn ? "private" : "public",
+            visibility: visBox.currentIndex === 1 ? "private" : "public",
             privacy: onion ? "onion" : "public",
             description: descField.text
         })
@@ -39,24 +38,26 @@ Item {
             function(){ logEvent("Couldn't start the stream.", "error") })
     }
     function stopStream() { logos.watch(backend.stopStream(), function(){ logEvent("Stream stopped", "info") }, function(){}) }
-    function regenerateKey() { logos.watch(backend.regenerateKey(), function(){ logEvent("Stream key rotated — re-enter the new key in OBS", "warning") }, function(){}) }
+    function regenerateKey() { logos.watch(backend.regenerateKey(), function(){ logEvent("Stream key rotated — re-enter the new key in your streaming software", "warning") }, function(){}) }
     function regenerateOnion() { logos.watch(backend.regenerateOnion(), function(){ logEvent("Rotating Tor address — listeners will rediscover", "warning") }, function(){}) }
 
-    function deliveryDotColor() {
+    // status → text + Theme.palette colour (LogosBadge pattern, per delivery-demo/receiver)
+    function deliveryColor() {
         return root.deliveryState === "connected" ? Theme.palette.success
              : root.deliveryState === "ready" ? Theme.palette.warning : Theme.palette.error
     }
     function deliveryLabel() {
-        return root.deliveryState === "connected" ? "Announce online"
-             : root.deliveryState === "ready" ? "Announce ready" : "Announce offline"
+        return root.deliveryState === "connected" ? "announce online"
+             : root.deliveryState === "ready" ? "announce ready" : "announce offline"
     }
-    function obsLive() { return root.streamState === "live" || root.streamState === "receiving" }
-    function obsDotColor() { return obsLive() ? Theme.palette.success : Theme.palette.warning }
-    function obsLabel() { return obsLive() ? "OBS live" : "Waiting for OBS" }
-    function onionDotColor() { return root.onionError.length > 0 ? Theme.palette.error : root.onionReady ? Theme.palette.success : Theme.palette.warning }
-    function onionLabel() { return root.onionError.length > 0 ? "Tor error" : root.onionReady ? "Onion ready" : "Publishing over Tor…" }
+    // #36 — generic "streaming software" (OBS, Liquidsoap, ffmpeg…), not OBS-specific
+    function sourceLive() { return root.streamState === "live" || root.streamState === "receiving" }
+    function sourceColor() { return sourceLive() ? Theme.palette.success : Theme.palette.warning }
+    function sourceLabel() { return sourceLive() ? "source live" : "waiting for source" }
+    function onionColor() { return root.onionError.length > 0 ? Theme.palette.error : root.onionReady ? Theme.palette.success : Theme.palette.warning }
+    function onionLabel() { return root.onionError.length > 0 ? "tor error" : root.onionReady ? "onion ready" : "publishing…" }
 
-    // ── Activity log ───────────────────────────────────────────────────────────
+    // ── Activity log (no DS component for a log feed — Theme-tokened container) ──
     function ts2(n) { return (n < 10 ? "0" : "") + n }
     function nowTs() { var d = new Date(); return "[" + ts2(d.getHours()) + ":" + ts2(d.getMinutes()) + ":" + ts2(d.getSeconds()) + "]" }
     function logEvent(msg, level) {
@@ -73,56 +74,12 @@ Item {
         function onActivity(line) { root.logEvent(line, "info") }
     }
     onDeliveryStateChanged: logEvent(deliveryLabel(), deliveryState === "connected" ? "success" : deliveryState === "ready" ? "warning" : "error")
-    onStreamStateChanged: if (streamCard !== null) logEvent("OBS: " + obsLabel(), obsLive() ? "success" : "warning")
+    onStreamStateChanged: if (streamCard !== null) logEvent("Source: " + sourceLabel(), sourceLive() ? "success" : "warning")
     onOnionReadyChanged: if (onionReady) logEvent("Onion ready · " + onionAddr, "success")
     onOnionErrorChanged: if (onionError.length > 0) logEvent("Tor: " + onionError, "error")
 
     function copyText(t) { clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); clipHelper.text = "" }
     TextEdit { id: clipHelper; visible: false }
-
-    // ── Custom controls on Theme tokens (no DS equivalent / need readOnly+echoMode) ──
-    component StatusPill: Rectangle {
-        id: pill
-        property color dot: Theme.palette.textMuted
-        property string label: ""
-        height: 28; radius: Theme.spacing.radiusMedium
-        implicitWidth: spRow.implicitWidth + 20
-        color: Theme.palette.surface
-        border.color: Theme.palette.borderHairline; border.width: 1
-        Layout.alignment: Qt.AlignVCenter
-        RowLayout {
-            id: spRow
-            anchors { left: parent.left; leftMargin: 10; verticalCenter: parent.verticalCenter }
-            spacing: 6
-            Rectangle { implicitWidth: 7; implicitHeight: 7; radius: 4; Layout.alignment: Qt.AlignVCenter; color: pill.dot }
-            LogosText { text: pill.label; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.text }
-        }
-    }
-    // readOnly/secret-capable field (LogosTextField's readOnly/echoMode API is unproven → Theme-tokened TextField)
-    component ThemedField: TextField {
-        color: Theme.palette.text
-        placeholderTextColor: Theme.palette.textMuted
-        selectionColor: Theme.palette.primary
-        background: Rectangle {
-            radius: Theme.spacing.radiusSmall; implicitHeight: 34
-            color: Theme.palette.surfaceRecessed
-            border.color: parent && parent.activeFocus ? Theme.palette.primary : Theme.palette.borderHairline
-            border.width: 1
-        }
-    }
-    component ThemedRadio: RadioButton {
-        id: dr
-        spacing: 8
-        palette.windowText: Theme.palette.text
-        indicator: Rectangle {
-            implicitWidth: 18; implicitHeight: 18; radius: 9
-            x: dr.leftPadding; y: dr.topPadding + (dr.availableHeight - height) / 2
-            color: "transparent"; border.width: 2
-            border.color: dr.checked ? Theme.palette.primary : Theme.palette.textMuted
-            Rectangle { anchors.centerIn: parent; width: 8; height: 8; radius: 4
-                color: Theme.palette.primary; visible: dr.checked }
-        }
-    }
 
     // ── Background ────────────────────────────────────────────────────────────
     Rectangle { anchors.fill: parent; color: Theme.palette.background }
@@ -131,7 +88,7 @@ Item {
         anchors.fill: parent
         spacing: 0
 
-        // ── Header ────────────────────────────────────────────────────────────
+        // ── Header: title + status badges (LogosBadge) ────────────────────────
         RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: 16; Layout.rightMargin: 16; Layout.topMargin: 14; Layout.bottomMargin: 6
@@ -145,10 +102,11 @@ Item {
             RowLayout {
                 spacing: 8
                 Layout.alignment: Qt.AlignVCenter
-                StatusPill { dot: root.deliveryDotColor(); label: root.deliveryLabel() }
-                StatusPill { visible: root.streamCard !== null; dot: root.obsDotColor(); label: root.obsLabel() }
-                StatusPill { visible: root.streamCard !== null && root.streamPrivacy === "onion"
-                             dot: root.onionDotColor(); label: root.onionLabel() }
+                LogosBadge { Layout.alignment: Qt.AlignVCenter; text: root.deliveryLabel(); color: root.deliveryColor() }
+                LogosBadge { Layout.alignment: Qt.AlignVCenter; visible: root.streamCard !== null; text: root.sourceLabel(); color: root.sourceColor() }
+                LogosBadge { Layout.alignment: Qt.AlignVCenter
+                             visible: root.streamCard !== null && root.streamPrivacy === "onion"
+                             text: root.onionLabel(); color: root.onionColor() }
             }
         }
 
@@ -166,76 +124,92 @@ Item {
                     visible: root.streamCard === null
                     LogosText { text: "Station name"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
                     LogosTextField { id: nameField; Layout.fillWidth: true; placeholderText: "What listeners see"; text: "My Station" }
-                    LogosText { text: "Visibility"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
                     RowLayout {
-                        spacing: 16
-                        ButtonGroup { id: visGroup }
-                        ThemedRadio { id: publicBtn;  text: "Public";  checked: true; ButtonGroup.group: visGroup }
-                        ThemedRadio { id: privateBtn; text: "Private"; ButtonGroup.group: visGroup }
-                    }
-                    LogosText { text: "Privacy"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
-                    RowLayout {
-                        spacing: 16
-                        ButtonGroup { id: privacyGroup }
-                        ThemedRadio { id: onionBtn;  text: "Onion (Tor)";  checked: true; ButtonGroup.group: privacyGroup }
-                        ThemedRadio { id: directBtn; text: "Direct (LAN)"; ButtonGroup.group: privacyGroup }
+                        Layout.fillWidth: true; spacing: 12
+                        ColumnLayout {
+                            Layout.fillWidth: true; spacing: 4
+                            LogosText { text: "Visibility"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                            LogosComboBox { id: visBox; model: ["Public", "Private"]; currentIndex: 0; Layout.fillWidth: true }
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true; spacing: 4
+                            LogosText { text: "Privacy"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                            LogosComboBox { id: privacyBox; model: ["Onion (Tor)", "Direct (LAN)"]; currentIndex: 0; Layout.fillWidth: true }
+                        }
                     }
                     LogosText {
                         Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: Theme.typography.secondaryText
-                        color: privacyGroup.checkedButton === onionBtn ? Theme.palette.textMuted : Theme.palette.warning
-                        text: privacyGroup.checkedButton === onionBtn
+                        color: privacyBox.currentIndex === 0 ? Theme.palette.textMuted : Theme.palette.warning
+                        text: privacyBox.currentIndex === 0
                             ? "🧅 Listeners reach you over Tor — your IP stays hidden and it works through NAT (no port-forwarding). First connect is slower."
                             : "⚠ Direct mode is LAN-only and exposes your IP to listeners. Use it only for local/low-latency streams."
                     }
                     LogosText { text: "Description (optional)"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
                     LogosTextField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
-                    LogosButton { text: "Start"; enabled: root.ready && nameField.text.length > 0; onClicked: root.startStream() }
+                    LogosButton { text: "Start"; enabled: nameField.text.length > 0; onClicked: root.startStream() }
                 }
 
-                // credentials card
-                ColumnLayout {
-                    Layout.fillWidth: true; spacing: 10
+                // credentials — bordered card (delivery-demo style), each field a labeled input block
+                Rectangle {
+                    Layout.fillWidth: true
                     visible: root.streamCard !== null
-                    LogosText { text: "Stream credentials"; color: Theme.palette.text; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightBold }
-                    LogosText {
-                        Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText
-                        text: "In OBS → Settings → Stream: set Service to “Custom…”, paste the RTMP Server and Stream Key below, then Start Streaming. The key is secret — don't share it."
-                    }
-                    component CopyRow: RowLayout {
-                        id: cr
-                        property string label: ""
-                        property string value: ""
-                        property bool secret: false
-                        property bool revealed: false
-                        property bool canRegen: false
-                        signal regen()
-                        Layout.fillWidth: true; spacing: 8
-                        LogosText { text: cr.label; color: Theme.palette.textSecondary; Layout.preferredWidth: 90; font.pixelSize: Theme.typography.secondaryText }
-                        ThemedField {
-                            Layout.fillWidth: true; readOnly: true; text: cr.value
-                            echoMode: (cr.secret && !cr.revealed) ? TextInput.Password : TextInput.Normal
-                        }
-                        LogosButton { visible: cr.secret; text: cr.revealed ? "Hide" : "Show"; implicitWidth: 56; onClicked: cr.revealed = !cr.revealed }
-                        LogosButton { visible: cr.canRegen; text: "⟳ New"; implicitWidth: 64; onClicked: cr.regen() }
-                        LogosButton { text: "Copy"; implicitWidth: 56; onClicked: root.copyText(cr.value) }
-                    }
-                    CopyRow { label: "RTMP Server"; value: root.streamCard ? root.streamCard.rtmpUrl : "" }
-                    CopyRow {
-                        label: "Stream Key"; value: root.streamCard ? root.streamCard.streamKey : ""
-                        secret: true; canRegen: true
-                        onRegen: root.regenerateKey()
-                    }
-                    RowLayout {
-                        visible: root.streamPrivacy === "onion"
-                        Layout.fillWidth: true; spacing: 8
-                        LogosText { text: "Tor address"; color: Theme.palette.textSecondary; Layout.preferredWidth: 90; font.pixelSize: Theme.typography.secondaryText }
+                    Layout.preferredHeight: credCol.implicitHeight + Theme.spacing.medium * 2
+                    radius: Theme.spacing.radiusMedium
+                    color: Theme.palette.surface
+                    border.width: 1; border.color: Theme.palette.borderHairline
+                    ColumnLayout {
+                        id: credCol
+                        anchors.fill: parent; anchors.margins: Theme.spacing.medium
+                        spacing: Theme.spacing.medium
+                        LogosText { text: "Stream credentials"; color: Theme.palette.text; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightBold }
                         LogosText {
-                            Layout.fillWidth: true; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textMuted; elide: Text.ElideRight
-                            text: root.onionReady ? "stable · persists across restarts" : "publishing…"
+                            Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText
+                            text: "In your streaming software (OBS, Liquidsoap, ffmpeg…) → set a Custom RTMP service, paste the Server and Stream Key below, then start streaming. The key is secret — don't share it."
                         }
-                        LogosButton { text: "⟳ New address"; implicitWidth: 120; onClicked: root.regenerateOnion() }
+                        // labeled input block: label on top, value in a field, actions grouped after
+                        component CredBlock: ColumnLayout {
+                            id: cb
+                            property string label: ""
+                            property string value: ""
+                            property bool secret: false
+                            property bool revealed: false
+                            property bool canRegen: false
+                            signal regen()
+                            Layout.fillWidth: true; spacing: 4
+                            LogosText { text: cb.label; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                            RowLayout {
+                                id: valRow
+                                Layout.fillWidth: true; spacing: 8
+                                // value shown in a LogosTextField (delivery-demo's input; no readOnly/echoMode — those
+                                // crash the DS wrapper in Basecamp). Copy uses the real value regardless of edits.
+                                LogosTextField { id: valField; Layout.fillWidth: true; text: (cb.secret && !cb.revealed) ? "••••••••••••••••" : cb.value }
+                                // buttons match the field's height (delivery-demo aligns field+button in a row)
+                                LogosButton { visible: cb.secret; text: cb.revealed ? "Hide" : "Show"; Layout.preferredHeight: valField.height; onClicked: cb.revealed = !cb.revealed }
+                                LogosButton { visible: cb.canRegen; text: "⟳ New"; Layout.preferredHeight: valField.height; onClicked: cb.regen() }
+                                LogosButton { text: "Copy"; Layout.preferredHeight: valField.height; onClicked: root.copyText(cb.value) }
+                            }
+                        }
+                        CredBlock { label: "RTMP Server"; value: root.streamCard ? root.streamCard.rtmpUrl : "" }
+                        CredBlock {
+                            label: "Stream Key"; value: root.streamCard ? root.streamCard.streamKey : ""
+                            secret: true; canRegen: true
+                            onRegen: root.regenerateKey()
+                        }
+                        ColumnLayout {
+                            visible: root.streamPrivacy === "onion"
+                            Layout.fillWidth: true; spacing: 4
+                            LogosText { text: "Tor address"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 8
+                                LogosText {
+                                    Layout.fillWidth: true; font.pixelSize: Theme.typography.secondaryText; color: Theme.palette.textMuted; elide: Text.ElideRight
+                                    text: root.onionReady ? "stable · persists across restarts" : "publishing…"
+                                }
+                                LogosButton { text: "⟳ New address"; onClicked: root.regenerateOnion() }
+                            }
+                        }
+                        LogosButton { text: "Stop"; onClicked: root.stopStream() }
                     }
-                    LogosButton { text: "Stop"; onClicked: root.stopStream() }
                 }
                 Item { Layout.fillHeight: true }
             }
