@@ -1,0 +1,22 @@
+// Qt Remote Objects contract for the Radio (broadcast-only) backend.
+// PROPs auto-sync to QML (backend.streamState); SIGNALs arrive via Connections{target:backend};
+// SLOTs are called from QML wrapped in logos.watch(...). The backend forwards each action to
+// modules().radio_module.* and mirrors radio_module's state into the PROPs via an async poll.
+class RadioUi
+{
+    PROP(QString streamState="idle" READONLY)        // idle | waiting | receiving | live
+    PROP(QString streamPrivacy="public" READONLY)    // public | onion
+    PROP(QString onionAddr="" READONLY)              // our .onion once published (onion mode)
+    PROP(bool    onionReady=false READONLY)          // hidden-service descriptor published
+    PROP(QString onionError="" READONLY)             // non-empty → Tor setup failed
+    PROP(QString deliveryState="offline" READONLY)   // offline | ready | connected (announce path)
+    PROP(QString streamCardJson="" READONLY)         // "" = no card (show form); else JSON of the card
+    PROP(QString lastError="" READONLY)
+
+    SIGNAL(activity(QString line))                   // human-readable log line for the UI
+
+    SLOT(QString startStream(QString configJson))    // spawns MediaMTX server-side → fire-and-forget
+    SLOT(QString stopStream())
+    SLOT(QString regenerateKey())                    // rotate the RTMP publish key
+    SLOT(QString regenerateOnion())                  // rotate the .onion identity (spawns tor)
+}
