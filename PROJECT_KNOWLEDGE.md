@@ -135,3 +135,36 @@ Proven end-to-end across two machines. Hard-won fixes (each was a silent failure
   (`pgrep -f … | while read p; do [ "$p" != "$$" ] && kill -9 "$p"; done`), and never put the kill in
   the same command as anything you need to survive.
 - fish shell on remote machines: bare `VAR=val cmd` and `$()` fail — use `ssh host 'bash -s' <<'EOF'`.
+
+## Now-playing + private topics (broadcaster half, 2026-07-05) — #35, #49
+
+**Now-playing (#35):** `readNowPlaying()` reads `RADIO_NOWPLAYING_FILE` (a file Liquidsoap's `on_metadata`
+writes as `"artist — title"`), sanitizes (strip control chars, cap 120), and `buildAnnouncePayload` adds an
+optional `nowPlaying`. Rides the 15s heartbeat. **Needs ID3 tags on the source tracks** — untagged files →
+empty `m["title"]/m["artist"]` → empty file → no now-playing. Tag with `ffmpeg -c copy -metadata` (atomic
+`mv`, safe mid-playback), don't build a Liquidsoap filename-fallback.
+
+**Private topics (#49):** `visibility=private` → announce on a per-stream/named topic instead of the public
+directory. The broadcaster can NAME it (radio_ui field shown when Private; radio_module sanitizes it into
+`/radio-basecamp/1/<name>/json`, falling back to the per-stream path). `buildCard` exposes
+`announceTopic`+`visibility` so radio_ui shows a copyable "Private topic" row. The announce also carries
+`announceTopic` so listeners can filter (receiver #44).
+
+**GOTCHA that shipped a "still public" station (user caught it):** the `visibility → announceTopic` derivation
+runs only in `startStream`. **Auto-resume (`resumeStreamIfPersisted`) reads `announceTopic` VERBATIM from
+`station.json`** (line ~399). So flipping `visibility` in `station.json` alone leaves a running/resumed station
+announcing on the OLD topic. To move a persisted station's announce you must set `announceTopic` in
+`station.json` too (or restart via `startStream`, not resume). General rule: **a persisted DERIVED field isn't
+re-derived on resume — mutate the stored value, not just its source input.**
+
+## UI/QML rules (DS + reactive gates) — hard-won 2026-07-05
+
+- **Status indicators = `LogosBadge`, always.** Don't invent `StatusPill`/`ThemedField`/`ThemedRadio`. Find
+  the DS component (`LogosComboBox` choices, `LogosTextField` fields, `LogosButton`/`LogosText`) by reading a
+  proven reference — **grep `~/basecamp/refs/logos-delivery-demo` (NOT just `modules/`)**; it uses `LogosComboBox`.
+- **Gate `enabled:`/`visible:` on a reactive signal, never a no-notify function call.**
+  `logos.isViewModuleReady("x")` evaluates ONCE at load (false) and never re-runs → Start stuck disabled.
+  Use `onViewModuleReadyChanged` → set a property (skill: `qml-to-universal-module-qtro-backend`).
+- **Change ONE variable when diagnosing a crash** so the fix is attributable. Changing ComboBox→Switch AND
+  readOnly/echoMode→LogosText in one rebuild hid which fix mattered → guessed wrong. (The crash was the
+  `readOnly`/`echoMode` props on `LogosTextField`, not `LogosComboBox` — which delivery-demo proves works.)

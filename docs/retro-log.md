@@ -141,3 +141,10 @@ Start button stuck disabled — gated on a non-reactive binding. Used
 evaluates ONCE at load (when it's false) and never re-runs when the module becomes ready → Start
 never enables even though the backend wired (onContextReady fired). **Rule: gate on a reactive signal
 (`onViewModuleReadyChanged` → set a property), never bind directly to a no-notify function call.**
+
+---
+
+_Synthesized 2026-07-05 → radio PROJECT_KNOWLEDGE.md "UI/QML rules (DS + reactive gates)" + "Now-playing +
+private topics (broadcaster half)". The three raw fails above (DS invention, ComboBox mis-diagnosis, non-
+reactive Start gate) are now permanent rules there; all three were covered by existing skills
+(`logos-design-system-adoption`, `qml-to-universal-module-qtro-backend`) that weren't consulted first._
