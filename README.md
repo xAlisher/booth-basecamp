@@ -16,6 +16,9 @@ module** — Booth is broadcast-only.
 > (`radio_module` + `radio_ui`, ✓ Signed by xAlisher) — see [Install](#install-into-logos-basecamp).
 > Universal API (`modules().radio_module`) + design-system UI. Runs on Basecamp **v0.2+**: Start →
 > MediaMTX → credentials → signed announce published.
+> **v0.2.1** adds a **first-launch dependency preflight** (#53) — if `mediamtx`/`tor`/`ffmpeg`/`torsocks`
+> are missing, a card shows a checklist + copy-able install command(s) + Re-check (`mediamtx` isn't in apt,
+> so Linux gets an `apt` line + a `nix profile install nixpkgs#mediamtx` line).
 
 > Status (2026-07-05): **broadcast-only, universal API + design-system, on the current v0.2 platform.**
 > The old **268-only** caveat is resolved (the v0.2 migration fixed the `delivery_module` consumer
