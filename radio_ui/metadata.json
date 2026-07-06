@@ -1,19 +1,30 @@
 {
   "name": "radio_ui",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "ui_qml",
   "interface": "universal",
   "main": "radio_ui_plugin",
   "view": "Main.qml",
   "icon": "icons/radio.png",
   "category": "media",
-  "description": "Radio — broadcast a station (RTMP → MediaMTX, announce over delivery, direct or .onion). Universal ui_qml calling radio_module via modules().",
-  "dependencies": ["radio_module"],
-  "codegen": { "rep": "src/radio_ui.rep" },
-
+  "description": "Radio \u2014 broadcast a station (RTMP \u2192 MediaMTX, announce over delivery, direct or .onion). Universal ui_qml calling radio_module via modules().",
+  "dependencies": [
+    "radio_module"
+  ],
+  "codegen": {
+    "rep": "src/radio_ui.rep"
+  },
   "nix": {
-    "packages": { "build": [], "runtime": [] },
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
     "external_libraries": [],
-    "cmake": { "find_packages": [], "extra_sources": [], "extra_include_dirs": [], "extra_link_libraries": [] }
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": []
+    }
   }
 }
