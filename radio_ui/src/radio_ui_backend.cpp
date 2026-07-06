@@ -4,7 +4,11 @@
 
 #include <QDateTime>
 #include <QFile>
+#include <QFileInfo>
 #include <QSettings>
+#include <QStandardPaths>
+#include <QStringList>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 
@@ -18,6 +22,13 @@ void diag(const QString& m) {
     }
 }
 QJsonObject parseObj(const QString& json) { return QJsonDocument::fromJson(json.toUtf8()).object(); }
+
+// #53 Resolve a broadcast helper: env override → bare name on PATH (mirrors radio_module's resolveBin +
+// its RADIO_*_BIN override names, so detection matches what radio_module actually spawns).
+QString resolveBin(const QString& name, const char* envVar) {
+    const QString env = qEnvironmentVariable(envVar);
+    return env.isEmpty() ? name : env;
+}
 }
 
 RadioUiBackend::RadioUiBackend(QObject* parent)
@@ -26,6 +37,86 @@ RadioUiBackend::RadioUiBackend(QObject* parent)
     // #8 restore the last-selected identity tier (no IPC — safe in the constructor).
     QSettings s{QStringLiteral("logos"), QStringLiteral("radio_ui")};
     setIdentityTier(qBound(0, s.value(QStringLiteral("identityTier"), 1).toInt(), 2));
+    publishDeps();   // #53 preflight the broadcast helpers so the welcome card is correct on first paint
+}
+
+QString RadioUiBackend::checkDeps()
+{
+    publishDeps();
+    return QStringLiteral("{\"ok\":true}");   // Re-check just refreshes the depsJson PROP the card binds to
+}
+
+// #53 Detect the external broadcast helpers on PATH and publish the JSON the first-launch card reads.
+// radio_module spawns mediamtx (stream server), tor (onion host), ffplay + torsocks (listen-back preview).
+// Honors the RADIO_*_BIN overrides (absolute path counts as present iff it exists+executable, else PATH).
+// Key wrinkle: **mediamtx is not an apt package** → Linux install splits into an apt line + a mediamtx line
+// (nix/release); macOS `brew` has all of them. We never auto-install.
+void RadioUiBackend::publishDeps()
+{
+    struct Req { const char* bin; const char* env; const char* pkg; };
+#ifdef __APPLE__
+    const QString os = QStringLiteral("macos");
+    const QList<Req> reqs = {   // no torsocks on mac (SIP); radio_module has no mac privoxy branch
+        { "mediamtx", "RADIO_MEDIAMTX_BIN", "mediamtx" },
+        { "tor",      "RADIO_TOR_BIN",      "tor"      },
+        { "ffplay",   "RADIO_FFPLAY_BIN",   "ffmpeg"   },
+    };
+#else
+    const QString os = QStringLiteral("linux");
+    const QList<Req> reqs = {
+        { "mediamtx", "RADIO_MEDIAMTX_BIN", "mediamtx" },   // NOT in apt
+        { "tor",      "RADIO_TOR_BIN",      "tor"      },
+        { "ffplay",   "RADIO_FFPLAY_BIN",   "ffmpeg"   },
+        { "torsocks", "RADIO_TORSOCKS_BIN", "torsocks" },
+    };
+#endif
+
+    QJsonArray items;
+    QStringList missingPkgs;
+    bool mediamtxMissing = false;
+    bool ok = true;
+    for (const Req& r : reqs) {
+        const QString resolved = resolveBin(QString::fromLatin1(r.bin), r.env);
+        bool present;
+        const QFileInfo fi(resolved);
+        if (fi.isAbsolute()) present = fi.exists() && fi.isExecutable();
+        else                 present = !QStandardPaths::findExecutable(resolved).isEmpty();
+        QJsonObject o;
+        o.insert(QStringLiteral("name"),    QString::fromLatin1(r.bin));
+        o.insert(QStringLiteral("present"), present);
+        items.append(o);
+        if (!present) {
+            ok = false;
+            const QString pkg = QString::fromLatin1(r.pkg);
+            if (QLatin1String(r.bin) == QLatin1String("mediamtx")) mediamtxMissing = true;
+            if (!missingPkgs.contains(pkg)) missingPkgs.append(pkg);
+        }
+    }
+
+    QString installCmd;
+    if (!ok) {
+#ifdef __APPLE__
+        installCmd = QStringLiteral("brew install ") + missingPkgs.join(QLatin1Char(' '));   // brew has mediamtx too
+#else
+        QStringList aptPkgs = missingPkgs;
+        aptPkgs.removeAll(QStringLiteral("mediamtx"));   // mediamtx isn't in apt
+        QStringList lines;
+        if (!aptPkgs.isEmpty())
+            lines << (QStringLiteral("sudo apt install -y ") + aptPkgs.join(QLatin1Char(' ')));
+        if (mediamtxMissing)
+            lines << QStringLiteral("nix profile install nixpkgs#mediamtx   # not in apt — or grab the release binary");
+        installCmd = lines.join(QLatin1Char('\n'));
+#endif
+    }
+
+    QJsonObject rootObj;
+    rootObj.insert(QStringLiteral("ok"),         ok);
+    rootObj.insert(QStringLiteral("os"),         os);
+    rootObj.insert(QStringLiteral("items"),      items);
+    rootObj.insert(QStringLiteral("installCmd"), installCmd);
+    const QString json = QString::fromUtf8(QJsonDocument(rootObj).toJson(QJsonDocument::Compact));
+    diag(QStringLiteral("publishDeps -> %1").arg(json));
+    setDepsJson(json);
 }
 
 QString RadioUiBackend::saveIdentityTier(int idx)
@@ -39,6 +130,7 @@ QString RadioUiBackend::saveIdentityTier(int idx)
 void RadioUiBackend::onContextReady()
 {
     diag(QStringLiteral("onContextReady: modules() wired"));
+    publishDeps();   // #53 re-publish now the QML replica is connected (ctor-time set can precede remoting — receiver#55)
     m_poll = new QTimer(this);
     m_poll->setInterval(1500);
     QObject::connect(m_poll, &QTimer::timeout, this, &RadioUiBackend::poll);

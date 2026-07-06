@@ -24,12 +24,14 @@ public slots:
     QString stopStream() override;
     QString regenerateKey() override;
     QString regenerateOnion() override;
+    QString checkDeps() override;                        // #53 re-run broadcast-helper detection → refresh depsJson
 
 protected:
     void onContextReady() override;                       // modules() live
 
 private:
     void poll();                                          // async getters → PROPs
+    void publishDeps();   // #53 detect mediamtx/tor/ffplay/torsocks on PATH → depsJson
     void applyStreamStatus(const QString& json);
     void applyDeliveryStatus(const QString& json);
     void applyStreamCard(const QString& json);

@@ -28,6 +28,16 @@ Item {
     property string keycardAuthId: ""
     property string keycardAuthStatus: ""   // "" | pending | complete | error
 
+    // #53 preflight — parse the backend's depsJson; only a real payload (defines `ok`) can show the card,
+    // so the "{}" default / parse errors read as ok:true (no spurious flash before the backend publishes).
+    function parseDeps(s) {
+        var def = { ok: true, os: "", items: [], installCmd: "" }
+        if (!s) return def
+        try { var d = JSON.parse(s); return (d && typeof d.ok !== "undefined") ? d : def }
+        catch (e) { return def }
+    }
+    readonly property var deps: parseDeps(backend ? backend.depsJson : "")
+
     // ── Backend actions (SLOTs via logos.watch) ────────────────────────────────
     function startStream() {
         var onion = privacyBox.currentIndex === 0   // model[0] = Onion (default)
@@ -150,6 +160,109 @@ Item {
         }
 
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.palette.borderHairline; Layout.topMargin: 6 }
+
+        // ── #53 Dependency preflight — broadcast helpers (mediamtx/tor/ffmpeg/torsocks) must be on PATH;
+        //    if any are missing, guide the user with copy-able install command(s) + Re-check (no auto-install).
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.leftMargin: 16; Layout.rightMargin: 16; Layout.topMargin: 10
+            visible: !root.deps.ok
+            implicitHeight: depCol.implicitHeight + 24
+            radius: 8
+            color: Theme.palette.backgroundSecondary; border.color: Theme.palette.warning; border.width: 1
+
+            ColumnLayout {
+                id: depCol
+                anchors { left: parent.left; right: parent.right; top: parent.top
+                          leftMargin: 12; rightMargin: 12; topMargin: 12 }
+                spacing: 8
+
+                LogosText {
+                    text: "⚠ Broadcasting needs a few tools installed"
+                    color: Theme.palette.text
+                    font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightBold
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+                LogosText {
+                    text: "Booth streams via MediaMTX over Tor. These helpers must be on your PATH — install the "
+                        + "missing ones below, then press Re-check (no restart needed)."
+                    color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+
+                // per-helper checklist (✓ present / ✗ missing)
+                Repeater {
+                    model: root.deps.items
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 8
+                        LogosText { text: modelData.present ? "✓" : "✗"
+                                    color: modelData.present ? Theme.palette.success : Theme.palette.error
+                                    font.pixelSize: Theme.typography.primaryText; font.family: "monospace" }
+                        LogosText { text: modelData.name
+                                    color: modelData.present ? Theme.palette.textSecondary : Theme.palette.text
+                                    font.pixelSize: Theme.typography.secondaryText; font.family: "monospace" }
+                        LogosText { text: modelData.present ? "found" : "missing"
+                                    color: modelData.present ? Theme.palette.textMuted : Theme.palette.error
+                                    font.pixelSize: Theme.typography.secondaryText }
+                        Item { Layout.fillWidth: true }
+                    }
+                }
+
+                LogosText {
+                    visible: root.deps.installCmd && root.deps.installCmd.length > 0
+                    text: "Install from a terminal (mediamtx isn't an apt package):"
+                    color: Theme.palette.textMuted; font.pixelSize: Theme.typography.secondaryText
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+                // command box — multi-line (Linux: an apt line + a mediamtx line) + copy icon
+                Rectangle {
+                    visible: root.deps.installCmd && root.deps.installCmd.length > 0
+                    Layout.fillWidth: true
+                    implicitHeight: depCmdRow.implicitHeight + 12
+                    radius: 6
+                    color: Theme.palette.background; border.color: Theme.palette.borderHairline; border.width: 1
+                    RowLayout {
+                        id: depCmdRow
+                        anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter
+                                  leftMargin: 8; rightMargin: 8 }
+                        spacing: 8
+                        LogosText {
+                            text: root.deps.installCmd
+                            font.pixelSize: Theme.typography.secondaryText; font.family: "monospace"
+                            color: Theme.palette.textSecondary
+                            Layout.fillWidth: true; wrapMode: Text.WrapAnywhere
+                        }
+                        Rectangle {
+                            id: depCopyBtn
+                            implicitWidth: 20; implicitHeight: 20; color: "transparent"
+                            Layout.alignment: Qt.AlignVCenter
+                            opacity: depCopyArea.containsMouse ? 0.9 : 0.5
+                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                            Rectangle { x: 3; y: 6; width: 10; height: 10; color: "transparent"; border.color: Theme.palette.textMuted; border.width: 1; radius: 2 }
+                            Rectangle { x: 6; y: 3; width: 10; height: 10; color: Theme.palette.background; border.color: Theme.palette.textMuted; border.width: 1; radius: 2 }
+                            Timer { id: depCopyFb; interval: 200; onTriggered: depCopyBtn.opacity = depCopyArea.containsMouse ? 0.9 : 0.5 }
+                            MouseArea {
+                                id: depCopyArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                onClicked: { root.copyText(root.deps.installCmd); depCopyBtn.opacity = 0.25; depCopyFb.restart() }
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true; spacing: 8
+                    LogosButton { text: "Re-check"; implicitWidth: 120; implicitHeight: 32
+                                  onClicked: if (backend) backend.checkDeps() }
+                    LogosText {
+                        visible: root.deps.os === "macos"
+                        text: "macOS: GUI apps get a minimal PATH — if Re-check still shows missing after brew install, point Booth at the tools via RADIO_*_BIN."
+                        color: Theme.palette.textMuted; font.pixelSize: Theme.typography.secondaryText
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+            }
+        }
 
         // ── Broadcast body ────────────────────────────────────────────────────
         Item {

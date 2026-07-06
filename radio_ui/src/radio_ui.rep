@@ -15,6 +15,9 @@ class RadioUi
     PROP(int     identityTier=1 READONLY)            // #8 persisted identity dropdown index (0 anon|1 autogen|2 keycard)
     PROP(QString lastError="" READONLY)
 
+    PROP(QString depsJson="{}" READONLY)             // #53 preflight: broadcast-helper availability + install
+                                                     // hint — {ok,os,items:[{name,present}],installCmd}
+
     SIGNAL(activity(QString line))                   // human-readable log line for the UI
 
     SLOT(QString startStream(QString configJson))    // spawns MediaMTX server-side → fire-and-forget
@@ -23,4 +26,5 @@ class RadioUi
     SLOT(QString stopStream())
     SLOT(QString regenerateKey())                    // rotate the RTMP publish key
     SLOT(QString regenerateOnion())                  // rotate the .onion identity (spawns tor)
+    SLOT(QString checkDeps())                        // #53 re-run broadcast-helper detection → refresh depsJson
 }
