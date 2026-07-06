@@ -3,6 +3,7 @@
 #include "logos_types.h"
 
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QSettings>
@@ -71,38 +72,113 @@ void RadioUiBackend::publishDeps()
     };
 #endif
 
+    // #57 probe known install dirs even OFF the (minimal) GUI PATH → distinguish installed-but-invisible
+    // from truly-missing (same as receiver-basecamp#57).
+#ifdef __APPLE__
+    const QStringList probeDirs = {
+        QStringLiteral("/opt/homebrew/bin"), QStringLiteral("/opt/homebrew/sbin"),
+        QStringLiteral("/usr/local/bin"),    QStringLiteral("/usr/local/sbin"),
+        QDir::homePath() + QStringLiteral("/.nix-profile/bin"),
+    };
+#else
+    const QStringList probeDirs = {
+        QStringLiteral("/usr/bin"), QStringLiteral("/usr/local/bin"), QStringLiteral("/usr/local/sbin"),
+        QDir::homePath() + QStringLiteral("/.nix-profile/bin"),
+        QStringLiteral("/run/current-system/sw/bin"), QStringLiteral("/snap/bin"),
+    };
+#endif
+    auto findInDirs = [&](const QString& name) -> QString {
+        for (const QString& d : probeDirs) {
+            const QFileInfo fi(d + QLatin1Char('/') + name);
+            if (fi.exists() && fi.isExecutable()) return fi.absoluteFilePath();
+        }
+        return QString();
+    };
+
+    QString pkgMgr;
+#ifdef __APPLE__
+    if (QFileInfo::exists(QStringLiteral("/opt/homebrew/bin/brew"))
+        || QFileInfo::exists(QStringLiteral("/usr/local/bin/brew")))               pkgMgr = QStringLiteral("brew");
+    else if (QFileInfo::exists(QDir::homePath() + QStringLiteral("/.nix-profile"))
+        || !QStandardPaths::findExecutable(QStringLiteral("nix")).isEmpty())        pkgMgr = QStringLiteral("nix");
+    else                                                                           pkgMgr = QStringLiteral("none");
+#else
+    if (!QStandardPaths::findExecutable(QStringLiteral("apt")).isEmpty()
+        || !QStandardPaths::findExecutable(QStringLiteral("apt-get")).isEmpty())    pkgMgr = QStringLiteral("apt");
+    else if (!QStandardPaths::findExecutable(QStringLiteral("dnf")).isEmpty())      pkgMgr = QStringLiteral("dnf");
+    else if (!QStandardPaths::findExecutable(QStringLiteral("pacman")).isEmpty())   pkgMgr = QStringLiteral("pacman");
+    else                                                                           pkgMgr = QStringLiteral("apt");
+#endif
+
     QJsonArray items;
     QStringList missingPkgs;
-    bool mediamtxMissing = false;
-    bool ok = true;
+    QStringList setenvLines;
+    bool mediamtxMissing = false, ok = true, needsRelaunch = false;
+
     for (const Req& r : reqs) {
-        const QString resolved = resolveBin(QString::fromLatin1(r.bin), r.env);
-        bool present;
-        const QFileInfo fi(resolved);
-        if (fi.isAbsolute()) present = fi.exists() && fi.isExecutable();
-        else                 present = !QStandardPaths::findExecutable(resolved).isEmpty();
+        const QString name = QString::fromLatin1(r.bin);
+        const QString envOverride = qEnvironmentVariable(r.env);
+        QString state, path;
+
+        if (!envOverride.isEmpty() && QFileInfo(envOverride).isAbsolute()) {
+            const QFileInfo fi(envOverride);
+            if (fi.exists() && fi.isExecutable()) { state = QStringLiteral("present"); path = fi.absoluteFilePath(); }
+            else                                    state = QStringLiteral("missing");
+        }
+        if (state.isEmpty()) {
+            const QString onPath = QStandardPaths::findExecutable(name);
+            if (!onPath.isEmpty()) { state = QStringLiteral("present"); path = onPath; }
+            else {
+                const QString off = findInDirs(name);
+                if (!off.isEmpty()) { state = QStringLiteral("found_offpath"); path = off; }
+                else                  state = QStringLiteral("missing");
+            }
+        }
+
         QJsonObject o;
-        o.insert(QStringLiteral("name"),    QString::fromLatin1(r.bin));
-        o.insert(QStringLiteral("present"), present);
-        items.append(o);
-        if (!present) {
-            ok = false;
+        o.insert(QStringLiteral("name"),  name);
+        o.insert(QStringLiteral("state"), state);
+        if (!path.isEmpty()) o.insert(QStringLiteral("path"), path);
+
+        if (state == QLatin1String("found_offpath")) {
+#ifdef __APPLE__
+            const QString cmd = QStringLiteral("launchctl setenv %1 %2").arg(QString::fromLatin1(r.env), path);
+#else
+            const QString cmd = QStringLiteral("export %1=%2").arg(QString::fromLatin1(r.env), path);
+#endif
+            o.insert(QStringLiteral("setenvCmd"), cmd);
+            setenvLines << cmd;
+            needsRelaunch = true; ok = false;
+        } else if (state == QLatin1String("missing")) {
             const QString pkg = QString::fromLatin1(r.pkg);
+            o.insert(QStringLiteral("pkg"), pkg);
             if (QLatin1String(r.bin) == QLatin1String("mediamtx")) mediamtxMissing = true;
             if (!missingPkgs.contains(pkg)) missingPkgs.append(pkg);
+            ok = false;
         }
+        items.append(o);
     }
 
+    // install command for the truly-missing helpers (mediamtx is NOT in apt → split on Linux)
     QString installCmd;
-    if (!ok) {
+    if (!missingPkgs.isEmpty()) {
 #ifdef __APPLE__
-        installCmd = QStringLiteral("brew install ") + missingPkgs.join(QLatin1Char(' '));   // brew has mediamtx too
+        const QString pkgs = missingPkgs.join(QLatin1Char(' '));
+        if (pkgMgr == QLatin1String("brew"))      installCmd = QStringLiteral("brew install ") + pkgs;   // brew has mediamtx
+        else if (pkgMgr == QLatin1String("nix")) {
+            QStringList nixed; for (const QString& p : missingPkgs) nixed << (QStringLiteral("nixpkgs#") + p);
+            installCmd = QStringLiteral("nix profile install ") + nixed.join(QLatin1Char(' '));
+        }
+        else installCmd = QStringLiteral("# install Homebrew from https://brew.sh, then:\nbrew install ") + pkgs;
 #else
-        QStringList aptPkgs = missingPkgs;
-        aptPkgs.removeAll(QStringLiteral("mediamtx"));   // mediamtx isn't in apt
+        QStringList aptPkgs = missingPkgs; aptPkgs.removeAll(QStringLiteral("mediamtx"));   // not in apt
         QStringList lines;
-        if (!aptPkgs.isEmpty())
-            lines << (QStringLiteral("sudo apt install -y ") + aptPkgs.join(QLatin1Char(' ')));
+        if (!aptPkgs.isEmpty()) {
+            const QString pkgs = aptPkgs.join(QLatin1Char(' '));
+            if (pkgMgr == QLatin1String("dnf"))         lines << (QStringLiteral("sudo dnf install -y ") + pkgs);
+            else if (pkgMgr == QLatin1String("pacman")) lines << (QStringLiteral("sudo pacman -S --noconfirm ") + pkgs);
+            else                                        lines << (QStringLiteral("sudo apt install -y ") + pkgs);
+        }
         if (mediamtxMissing)
             lines << QStringLiteral("nix profile install nixpkgs#mediamtx   # not in apt — or grab the release binary");
         installCmd = lines.join(QLatin1Char('\n'));
@@ -110,10 +186,13 @@ void RadioUiBackend::publishDeps()
     }
 
     QJsonObject rootObj;
-    rootObj.insert(QStringLiteral("ok"),         ok);
-    rootObj.insert(QStringLiteral("os"),         os);
-    rootObj.insert(QStringLiteral("items"),      items);
-    rootObj.insert(QStringLiteral("installCmd"), installCmd);
+    rootObj.insert(QStringLiteral("ok"),            ok);
+    rootObj.insert(QStringLiteral("os"),            os);
+    rootObj.insert(QStringLiteral("pkgMgr"),        pkgMgr);
+    rootObj.insert(QStringLiteral("items"),         items);
+    rootObj.insert(QStringLiteral("installCmd"),    installCmd);
+    rootObj.insert(QStringLiteral("setenvBlock"),   setenvLines.join(QLatin1Char('\n')));
+    rootObj.insert(QStringLiteral("needsRelaunch"), needsRelaunch);
     const QString json = QString::fromUtf8(QJsonDocument(rootObj).toJson(QJsonDocument::Compact));
     diag(QStringLiteral("publishDeps -> %1").arg(json));
     setDepsJson(json);

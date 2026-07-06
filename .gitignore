@@ -8,3 +8,5 @@ build/
 *.dylib
 flake.lock merge=ours
 halt.md
+logs/
+result-lgx-portable

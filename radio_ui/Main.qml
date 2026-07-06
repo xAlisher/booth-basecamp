@@ -130,6 +130,41 @@ Item {
     function copyText(t) { clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); clipHelper.text = "" }
     TextEdit { id: clipHelper; visible: false }
 
+    // #57 reusable copy-command box (multi-line) for the dependency card — declared at file root so it
+    // resolves everywhere (nested inline components fail qmllint's resolver / can blank the card).
+    component CmdBox: Rectangle {
+        property string cmd: ""
+        Layout.fillWidth: true
+        implicitHeight: cbRow.implicitHeight + 12
+        radius: 6
+        color: Theme.palette.background; border.color: Theme.palette.borderHairline; border.width: 1
+        RowLayout {
+            id: cbRow
+            anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter
+                      leftMargin: 8; rightMargin: 8 }
+            spacing: 8
+            LogosText {
+                text: cmd
+                font.pixelSize: Theme.typography.secondaryText; font.family: "monospace"
+                color: Theme.palette.textSecondary
+                Layout.fillWidth: true; wrapMode: Text.WrapAnywhere
+            }
+            Rectangle {
+                id: cbBtn
+                implicitWidth: 20; implicitHeight: 20; color: "transparent"; Layout.alignment: Qt.AlignVCenter
+                opacity: cbArea.containsMouse ? 0.9 : 0.5
+                Behavior on opacity { NumberAnimation { duration: 150 } }
+                Rectangle { x: 3; y: 6; width: 10; height: 10; color: "transparent"; border.color: Theme.palette.textMuted; border.width: 1; radius: 2 }
+                Rectangle { x: 6; y: 3; width: 10; height: 10; color: Theme.palette.background; border.color: Theme.palette.textMuted; border.width: 1; radius: 2 }
+                Timer { id: cbFb; interval: 200; onTriggered: cbBtn.opacity = cbArea.containsMouse ? 0.9 : 0.5 }
+                MouseArea {
+                    id: cbArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                    onClicked: { root.copyText(cmd); cbBtn.opacity = 0.25; cbFb.restart() }
+                }
+            }
+        }
+    }
+
     // ── Background ────────────────────────────────────────────────────────────
     Rectangle { anchors.fill: parent; color: Theme.palette.background }
 
@@ -183,82 +218,62 @@ Item {
                     font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightBold
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
                 }
-                LogosText {
-                    text: "Booth streams via MediaMTX over Tor. These helpers must be on your PATH — install the "
-                        + "missing ones below, then press Re-check (no restart needed)."
-                    color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText
-                    Layout.fillWidth: true; wrapMode: Text.WordWrap
-                }
-
-                // per-helper checklist (✓ present / ✗ missing)
+                // per-helper checklist: ✓ present · ⚠ installed-but-invisible · ✗ missing
                 Repeater {
                     model: root.deps.items
                     RowLayout {
                         Layout.fillWidth: true; spacing: 8
-                        LogosText { text: modelData.present ? "✓" : "✗"
-                                    color: modelData.present ? Theme.palette.success : Theme.palette.error
+                        LogosText { text: modelData.state === "present" ? "✓" : modelData.state === "found_offpath" ? "⚠" : "✗"
+                                    color: modelData.state === "present" ? Theme.palette.success : modelData.state === "found_offpath" ? Theme.palette.warning : Theme.palette.error
                                     font.pixelSize: Theme.typography.primaryText; font.family: "monospace" }
                         LogosText { text: modelData.name
-                                    color: modelData.present ? Theme.palette.textSecondary : Theme.palette.text
+                                    color: modelData.state === "present" ? Theme.palette.textSecondary : Theme.palette.text
                                     font.pixelSize: Theme.typography.secondaryText; font.family: "monospace" }
-                        LogosText { text: modelData.present ? "found" : "missing"
-                                    color: modelData.present ? Theme.palette.textMuted : Theme.palette.error
-                                    font.pixelSize: Theme.typography.secondaryText }
-                        Item { Layout.fillWidth: true }
+                        LogosText { text: modelData.state === "present" ? "found"
+                                        : modelData.state === "found_offpath" ? "installed — not visible to the app" : "missing"
+                                    color: modelData.state === "present" ? Theme.palette.textMuted
+                                         : modelData.state === "found_offpath" ? Theme.palette.warning : Theme.palette.error
+                                    font.pixelSize: Theme.typography.secondaryText
+                                    Layout.fillWidth: true; elide: Text.ElideRight }
                     }
                 }
 
+                // ── Block A: installed but invisible → point Booth at them ──
                 LogosText {
-                    visible: root.deps.installCmd && root.deps.installCmd.length > 0
-                    text: "Install from a terminal (mediamtx isn't an apt package):"
+                    visible: root.deps.setenvBlock && root.deps.setenvBlock.length > 0
+                    text: "Some tools are installed but this app can't see them (macOS gives GUI apps a minimal PATH). Run this to point Booth at them:"
+                    color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+                CmdBox {
+                    visible: root.deps.setenvBlock && root.deps.setenvBlock.length > 0
+                    cmd: root.deps.setenvBlock || ""
+                }
+                LogosText {
+                    visible: root.deps.needsRelaunch === true
+                    text: "…then fully quit & relaunch Basecamp (read at launch), and press Re-check."
                     color: Theme.palette.textMuted; font.pixelSize: Theme.typography.secondaryText
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
                 }
-                // command box — multi-line (Linux: an apt line + a mediamtx line) + copy icon
-                Rectangle {
+
+                // ── Block B: truly missing → install (mediamtx isn't in apt) ──
+                LogosText {
                     visible: root.deps.installCmd && root.deps.installCmd.length > 0
-                    Layout.fillWidth: true
-                    implicitHeight: depCmdRow.implicitHeight + 12
-                    radius: 6
-                    color: Theme.palette.background; border.color: Theme.palette.borderHairline; border.width: 1
-                    RowLayout {
-                        id: depCmdRow
-                        anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter
-                                  leftMargin: 8; rightMargin: 8 }
-                        spacing: 8
-                        LogosText {
-                            text: root.deps.installCmd
-                            font.pixelSize: Theme.typography.secondaryText; font.family: "monospace"
-                            color: Theme.palette.textSecondary
-                            Layout.fillWidth: true; wrapMode: Text.WrapAnywhere
-                        }
-                        Rectangle {
-                            id: depCopyBtn
-                            implicitWidth: 20; implicitHeight: 20; color: "transparent"
-                            Layout.alignment: Qt.AlignVCenter
-                            opacity: depCopyArea.containsMouse ? 0.9 : 0.5
-                            Behavior on opacity { NumberAnimation { duration: 150 } }
-                            Rectangle { x: 3; y: 6; width: 10; height: 10; color: "transparent"; border.color: Theme.palette.textMuted; border.width: 1; radius: 2 }
-                            Rectangle { x: 6; y: 3; width: 10; height: 10; color: Theme.palette.background; border.color: Theme.palette.textMuted; border.width: 1; radius: 2 }
-                            Timer { id: depCopyFb; interval: 200; onTriggered: depCopyBtn.opacity = depCopyArea.containsMouse ? 0.9 : 0.5 }
-                            MouseArea {
-                                id: depCopyArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                onClicked: { root.copyText(root.deps.installCmd); depCopyBtn.opacity = 0.25; depCopyFb.restart() }
-                            }
-                        }
-                    }
+                    text: root.deps.pkgMgr === "none"
+                          ? "Install the missing tools:"
+                          : "Install the missing tools" + (root.deps.pkgMgr ? " (" + root.deps.pkgMgr + (root.deps.os === "linux" ? "; mediamtx isn't in apt" : "") + ")" : "") + ":"
+                    color: Theme.palette.textMuted; font.pixelSize: Theme.typography.secondaryText
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+                CmdBox {
+                    visible: root.deps.installCmd && root.deps.installCmd.length > 0
+                    cmd: root.deps.installCmd || ""
                 }
 
                 RowLayout {
                     Layout.fillWidth: true; spacing: 8
                     LogosButton { text: "Re-check"; implicitWidth: 120; implicitHeight: 32
                                   onClicked: if (backend) backend.checkDeps() }
-                    LogosText {
-                        visible: root.deps.os === "macos"
-                        text: "macOS: GUI apps get a minimal PATH — if Re-check still shows missing after brew install, point Booth at the tools via RADIO_*_BIN."
-                        color: Theme.palette.textMuted; font.pixelSize: Theme.typography.secondaryText
-                        Layout.fillWidth: true; wrapMode: Text.WordWrap
-                    }
                     Item { Layout.fillWidth: true }
                 }
             }
