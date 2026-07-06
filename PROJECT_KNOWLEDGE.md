@@ -168,3 +168,32 @@ re-derived on resume — mutate the stored value, not just its source input.**
 - **Change ONE variable when diagnosing a crash** so the fix is attributable. Changing ComboBox→Switch AND
   readOnly/echoMode→LogosText in one rebuild hid which fix mattered → guessed wrong. (The crash was the
   `readOnly`/`echoMode` props on `LogosTextField`, not `LogosComboBox` — which delivery-demo proves works.)
+
+## Liquidsoap station.liq (PSR playout, 2026-07-06)
+
+### A custom `cross` transition EATS the new track's metadata → frozen now-playing
+Replacing the built-in `crossfade(...)` with a hand-rolled `cross(duration, trans, src)` where `trans`
+returns `add([fade.out(old.source), fade.in(new.source)])` **broke `nowplaying.txt`** — it froze on the
+first (startup) track. `cross` reads the incoming track's start-of-track metadata to build `new.metadata`,
+**consuming** it, so `on_metadata` downstream never sees it (and `insert_metadata(new.metadata)` didn't
+reliably re-emit). The built-in `crossfade` re-inserts it correctly. **Fix: keep the built-in `crossfade`.**
+Diagnosed headless: `output.dummy` + `on_metadata(print)` over a `rotate([1,1],[jingles,talks])` — built-in
+printed jingle→talk, custom printed jingle→jingle. Verify metadata flow this way BEFORE deploying to a live
+stream.
+
+### `liq_cross_duration` controls a track's OUTGOING transition, not incoming
+Proven with a tone test (two 5s sines, first stamped `liq_cross_duration=0`, `crossfade duration=3` →
+output = 10s = **hard cut**, so the override shortened the cross AFTER the stamped track). So you **cannot**
+hard-cut *into* a jingle by stamping the jingle — you'd have to stamp the (unknown) preceding track. To get
+"clean voice intro" without a custom transition: give the ident a **3s+ music intro** so the built-in 3s
+crossfade completes before the voice.
+
+### Announce/discovery vs stream is intentional (booth-android too)
+The node announces continuously (heartbeat), independent of audio being live — that's how a station shows
+in Receiver before/without broadcasting. To gate it ("announce only while on air"), stop the native
+heartbeat on stop. Stamp jingle metadata via `metadata.map(update=true, insert_missing=true, …)` — `update`
+MERGES (keeps the real title/artist), doesn't replace.
+
+### Reload requires a process restart; watched dirs don't
+`playlist(reload_mode="watch")` auto-picks-up files dropped into the dir, but a `station.liq` **structure**
+change needs killing + relaunching liquidsoap (interrupts listeners — check MediaMTX `readers=` first).
