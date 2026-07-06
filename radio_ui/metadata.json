@@ -7,7 +7,7 @@
   "view": "Main.qml",
   "icon": "icons/radio.png",
   "category": "media",
-  "description": "Radio \u2014 broadcast a station (RTMP \u2192 MediaMTX, announce over delivery, direct or .onion). Universal ui_qml calling radio_module via modules().",
+  "description": "Booth — broadcast a station (RTMP → MediaMTX, announce over delivery, direct or .onion). Universal ui_qml calling radio_module.",
   "dependencies": [
     "radio_module"
   ],
