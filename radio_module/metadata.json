@@ -5,19 +5,32 @@
   "category": "media",
   "description": "Decentralized audio broadcast: MediaMTX origin control, ffplay playback, and LogosMessaging discovery (announce/subscribe).",
   "main": "radio_module_plugin",
-  "dependencies": ["delivery_module"],
-
+  "dependencies": [
+    "delivery_module"
+  ],
   "nix": {
     "packages": {
-      "build": ["pkg-config"],
-      "runtime": ["ffmpeg", "mediamtx", "tor", "torsocks", "secp256k1"]
+      "build": [
+        "pkg-config"
+      ],
+      "runtime": [
+        "ffmpeg",
+        "mediamtx",
+        "tor",
+        "secp256k1"
+      ]
     },
     "external_libraries": [],
     "cmake": {
-      "find_packages": ["Qt6 REQUIRED COMPONENTS Core Network"],
+      "find_packages": [
+        "Qt6 REQUIRED COMPONENTS Core Network"
+      ],
       "extra_sources": [],
       "extra_include_dirs": [],
-      "extra_link_libraries": ["Qt6::Core", "Qt6::Network"]
+      "extra_link_libraries": [
+        "Qt6::Core",
+        "Qt6::Network"
+      ]
     }
   }
 }
