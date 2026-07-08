@@ -8,8 +8,10 @@
     nixpkgs.follows = "logos-module-builder/nixpkgs";
     nix-bundle-lgx.follows = "logos-module-builder/nix-bundle-lgx";
     # delivery_module is auto-resolved from metadata.json `dependencies` via this input.
-    # Input attr name MUST match the dependency name. Pinned to v0.1.1 (proven in scorched-earth).
-    delivery_module.url = "github:logos-co/logos-delivery-module/v0.1.1";
+    # Input attr name MUST match the dependency name. Pinned to the rev receiver-basecamp uses
+    # (c21ffb83) — its zerokit builds/caches on aarch64-darwin, unlike the old v0.1.1 pin whose
+    # zerokit 0.9.0 falls back to vendoring old Rust crates → crates.io 403 on darwin (#booth mac build).
+    delivery_module.url = "github:logos-co/logos-delivery-module/c21ffb83b2b891843de9a940dd60e5e56c8803de";
     delivery_module.inputs.logos-module-builder.follows = "logos-module-builder";
   };
 
