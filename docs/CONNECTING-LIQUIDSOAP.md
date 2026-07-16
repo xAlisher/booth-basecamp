@@ -5,6 +5,10 @@ capture, it plays a music folder (or playlist) and streams AAC audio to Booth's
 built-in origin (MediaMTX). Booth captures nothing itself — it just announces
 your station and serves it to listeners over Tor.
 
+> **Running an unattended station on a headless box** (rip content → normalize → program →
+> auto-resume under `systemd`, surviving reboots — the way we run PSR on Sneg)? This doc is the
+> *feed* half; the full end-to-end guide is [`ZERO-TO-STREAMING.md`](ZERO-TO-STREAMING.md).
+
 The block below is written so you can **hand it straight to an AI agent** to set
 up. The canonical multi-folder script we run (talks / DJ / jingles with weighted
 rotation) is [`docs/parallel-society-radio/station.liq`](parallel-society-radio/station.liq).
