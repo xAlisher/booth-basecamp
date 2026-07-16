@@ -283,8 +283,11 @@ feasible in-module, privkey wiped), #8 (Basecamp keeps a relay/core module alive
 > (ahead of the DWeb Camp target). Remaining production issues **#28–#33 stay open** in the tracker;
 > the live-state snapshot is archived in
 > [`../halts/2026-07-05-parallel-society-radio-live.md`](../halts/2026-07-05-parallel-society-radio-live.md).
-> Durability (liquidsoap as a systemd `--user` service) and onion reachability (**#38**/**#46**) are
-> the open follow-ups.
+> **Durability is done** (superseding the halt's TODO): PSR runs as `systemd --user` units on Sneg —
+> `logos-radio-xvfb` + `logos-radio-app` (headless Basecamp, station auto-resume) + `logos-radio-psr`
+> (liquidsoap feed), with `logos-radio-feed` (old ffmpeg loop) disabled; the full setup is documented
+> in [`../ZERO-TO-STREAMING.md`](../ZERO-TO-STREAMING.md). **Onion reachability (#38/#46) remains the
+> open follow-up.**
 
 | GH | Task | Title | Pri | Blocked by |
 |----|------|-------|-----|-----------|
