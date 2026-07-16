@@ -210,6 +210,106 @@ scorched-earth P2P notes: distinct `SCORCHED_TCP_PORT`-style node separation if 
 
 ---
 
+## Phase 2 — Identity & Scaling roadmap (2026-06-23)
+
+> Cross-module epic spanning **radio-basecamp** + **receiver-basecamp**. Anchored on a station
+> **cryptographic identity** (a Keycard-derived signing key) which then unlocks two things: a
+> trustworthy *follow/notify* experience, and a *restream mesh* that scales past the single-origin
+> uplink limit (the Phase-2 path the BRIEF anticipated). Same plan-first / scope-freeze / spikes-first
+> discipline as v1. receiver-basecamp has no plan doc of its own, so its issues are tracked here.
+
+> **Status (2026-07-16):** the identity foundation **#24 shipped** — announces are now signed with a
+> Keycard-derived secp256k1 key (v0.2.1, `feat/station-identity-sign`; assumption 7 verified). **#25**
+> (signed media digests — the mesh linchpin) remains **open**. The receiver-side themes below
+> (**#13–#16**) are **receiver-basecamp** issue numbers, tracked in that repo, not radio's #13–#16.
+
+**Two themes, in dependency order:**
+
+| Pri | Issue | Repo | Theme | Depends on | Risk | Value |
+|-----|-------|------|-------|-----------|------|-------|
+| **P2.0** | **#24 — sign announces with a Keycard-derived domain key** | radio | Identity (foundation) | — | Med (secp256k1 host-side sign; keycard optional) | Gates everything below |
+| **P2.1a** | **#13 — verify station identity by pubkey, not name** | receiver | Identity | #24 | Low | Anti-spoof; "same host" anchor |
+| **P2.1b** | **#14 — pin a station + background desktop notification** | receiver | Identity | #13, #24 | Med (needs platform background-lifetime check) | First headline UX (follow a host) |
+| **P2.2** | **#25 — signed media digests (verify stream is identical)** | radio | Scaling (foundation) | #24 | **High — riskiest unknown** (sign rolling 1s mpegts segments) | Trust linchpin for the whole mesh |
+| **P2.3a** | **#15 — restream on your own .onion + announce as a mirror** | receiver | Scaling | #25, #24 | Med-High | More endpoints; offloads origin uplink |
+| **P2.3b** | **#16 — aggregate endpoints by identity + select best (failover)** | receiver | Scaling | #15, #25, #13 | Med | Listener picks best of N mirrors |
+
+**Dependency graph**
+
+```
+#24 (sign announces) ──┬──▶ #13 (verify) ──▶ #14 (pin + bg notify)        ← Identity theme
+                       │                         ▲
+                       └──▶ #25 (sign media) ──▶ #15 (restream/mirror) ──▶ #16 (aggregate + select)
+                                                                  ▲
+                                                       #13 (verify) ┘   ← Scaling theme reuses verify
+```
+
+**Recommended execution order (spikes-first, ship-the-cheap-win-first)**
+
+1. **#24** — the identity foundation. Nothing else is real without it. Keep Keycard a *soft* dependency
+   (no card → unsigned/unverified, today's behavior).
+2. **#13 → #14** — ship the **Identity theme as a unit**. Low-risk, high-value, no media-layer crypto;
+   delivers "follow a host, get notified, can't be spoofed." `#14` carries a `trivial-experiment-first`
+   gate: confirm Basecamp keeps the receiver relay/core module alive in the background *before* building
+   the notifier.
+3. **Pull the #25 spike early (in parallel with the identity theme)** — it is the riskiest unknown of
+   Phase 2, exactly as MediaMTX bundling (#2) was for v1. Spike question: *can we hash MediaMTX's 1s
+   mpegts segments as they land and publish a signed feed?* De-risk before committing to the mesh.
+4. **#25 (full) → #15 → #16** — the **Scaling theme**, only after the #25 spike proves out and the
+   identity theme has shipped. `#16`'s selection logic should also land in radio's own Listen tab.
+
+**Why this order:** the identity theme is a cheap, self-contained win that also produces the `pubkey`
+the mesh aggregates on — so shipping it first de-risks and de-scopes the harder scaling theme. The one
+thing that can sink the mesh is content authenticity over a live segmented stream (#25), so its *spike*
+is pulled forward even though its *build* comes later.
+
+**New assumptions to verify (added to the register below):** #7 (host-side secp256k1 sign/verify is
+feasible in-module, privkey wiped), #8 (Basecamp keeps a relay/core module alive with no panel focused),
+#9 (MediaMTX 1s segments can be hashed+signed as they land without breaking the live edge).
+
+---
+
+## Content Station — Parallel Society Radio (2026-07-02)
+
+> The v1 plumbing (Liquidsoap → RTMP → MediaMTX → HLS/onion → ffplay, discovery over LogosMessaging)
+> is built and demo-proven, but has never carried a real curated program. This epic turns it into an
+> actual station — **"Parallel Society Radio"** — fed by Parallel Society festival recordings (talks +
+> DJ sets), running headless from **Sneg** (`ssh snezhok`), discoverable and playable in the **Receiver**.
+> Directly feeds **#26** ("Wire to the Liquidsoap stream on Sneg" — Sasha's "lifestyle vibe" showcase).
+> **Target: DWeb Camp (Jul 8–12)** → sequence spikes-first, launchable-core-first. Branch:
+> `feat/parallel-society-radio`. Primary content anchor: **youtube.com/@Logos_network**.
+
+> **Status (2026-07-16):** **launched live 2026-07-05** on Sneg — end-to-end verify (**#34**) closed
+> (ahead of the DWeb Camp target). Remaining production issues **#28–#33 stay open** in the tracker;
+> the live-state snapshot is archived in
+> [`../halts/2026-07-05-parallel-society-radio-live.md`](../halts/2026-07-05-parallel-society-radio-live.md).
+> Durability (liquidsoap as a systemd `--user` service) and onion reachability (**#38**/**#46**) are
+> the open follow-ups.
+
+| GH | Task | Title | Pri | Blocked by |
+|----|------|-------|-----|-----------|
+| **#28** | 1 | Content discovery: hunt YouTube + Discord → content table | P0 | anchor seed (have @Logos_network) |
+| **#29** | 2 | Rip + transcode → optimised MP3/FLAC + EBU-R128 loudness pass | P0 | #28 |
+| **#30** | 3 | Provision Liquidsoap on Sneg + pull docs + generate skills | P1 | — |
+| **#31** | 4 | Station programming (`station.liq`: rotation, jingles, crossfade, loudness) | P1 | #29 |
+| **#32** | 5 | Jingles: invite chair28980 + file jingle-request issue | P1 | — |
+| **#33** | 6 | Assemble + launch (station.liq on Sneg → live + announcing) | P0 | #29, #31 (#32 soft) |
+| **#34** | 7 | Verify end-to-end in Receiver (discover, play, quality, liveness) | P0 | #33 |
+
+**Execution order (spikes-first):** `#30` (parallel, no deps) · critical path `#28 → #29 → #31 → #33 → #34` ·
+`#32` (jingles) in parallel, grafts into #33 when ready — station launches without them if late.
+
+**Loudness recommendation (talks vs DJ sets differ ~10 LUFS):** normalise **offline** at rip time —
+`loudgain -a` ReplayGain tags (leaves audio untouched, best quality) or two-pass `ffmpeg loudnorm`
+(talks -16 LUFS, music -14 LUFS) — then a **light Liquidsoap `enable_replaygain()` + `limit()`** at
+playout as a safety net. Avoid Liquidsoap's adaptive `normalize()` as the primary tool (pumps on music).
+Format: FLAC where lossless, else 320 k MP3 (playout re-encodes to AAC 128 k → avoid lossy-on-lossy).
+
+**Kickoff inputs still open (defaults chosen, confirm at kickoff):** Discord anchor channel for the
+#28 fan-out; skills home = module `docs/skills/` **+** standalone `liquidsoap-skills/` repo (#30).
+
+---
+
 ## Assumptions Register
 
 | # | Assumption | Verification | Break condition |
@@ -220,7 +320,10 @@ scorched-earth P2P notes: distinct `SCORCHED_TCP_PORT`-style node separation if 
 | 3 | `ffplay` plays HLS `.m3u8` headless with `-nodisp` | local: `ffplay -nodisp -autoexit <m3u8>` | ffplay build lacks HLS demuxer (unlikely; ffmpeg full) |
 | 4 | QML sandbox allows copy-to-clipboard for the OBS card | trivial QML clip-helper test | clipboard blocked → fall back to C++ `openUrl`/clip invokable |
 | 5 | Heartbeat-only discovery is acceptable UX (no instant directory on launch) | product call — accepted for v1 | users expect instant list → add Store/cache later |
-| 6 | A single MediaMTX instance serves the small target audience | brief constraint (origin uplink limit) | audience exceeds uplink → Phase-2 swarm (out of scope) |
+| 6 | A single MediaMTX instance serves the small target audience | brief constraint (origin uplink limit) | audience exceeds uplink → Phase-2 swarm (now in scope — #15/#16) |
+| 7 | Host-side secp256k1 sign/verify is feasible in-module, privkey wiped immediately after signing | spike: derive via keycard `deriveKey`, sign an announce, verify, zeroize | no usable secp256k1 in the build → vendor a lib or rethink the scheme (Phase-2 #24) |
+| 8 | Basecamp keeps a relay/core module alive (delivery subscription live) with no panel focused | trivial-experiment-first: subscribe in `receiver_relay`, close panel, confirm messages still arrive | host suspends background modules → background notify (#14) not possible as designed; document limitation |
+| 9 | MediaMTX 1s mpegts segments can be hashed + signed as they land without disturbing the live edge | spike: watch segment dir, SHA-256 each `.ts`, sign a rolling feed (Phase-2 #25) | segment churn too fast / no stable on-disk segment → sign the playlist instead, or per-segment detached sigs |
 
 ## Evidence Matrix (current state)
 
