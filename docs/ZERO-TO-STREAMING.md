@@ -22,19 +22,19 @@
 
 ```
   ┌───────────────────────── your Linux box (e.g. Debian/Ubuntu) ─────────────────────────┐
-  │                                                                                        │
-  │  Xvfb :99  ◄── virtual display (no monitor needed)                                     │
-  │     ▲                                                                                  │
-  │  Basecamp AppImage (headless)                                                          │
-  │     └─ Booth = radio_module (core)  ──spawns──►  MediaMTX (origin)  ──spawns──►  Tor    │
-  │           │  reads station.json on load → AUTO-RESUMES the station                     │
-  │           │  announces over LogosMessaging every 15s (TTL 45s)                          │
-  │           ▼                                                                             │
-  │        RTMP :1935  ◄──────────────────  Liquidsoap (automated DJ)                       │
-  │                                          plays your normalized folders, pushes AAC      │
-  │        HLS :8888  ──► onion :80 ─────────────────────────────────────────────┐         │
+  │                                                                                       │
+  │  Xvfb :99  ◄── virtual display (no monitor needed)                                    │
+  │     ▲                                                                                 │
+  │  Basecamp AppImage (headless)                                                         │
+  │     └─ Booth = radio_module (core)  ──spawns──►  MediaMTX (origin)  ──spawns──►  Tor  │
+  │           │  reads station.json on load → AUTO-RESUMES the station                    │
+  │           │  announces over LogosMessaging every 15s (TTL 45s)                        │
+  │           ▼                                                                           │
+  │        RTMP :1935  ◄──────────────────  Liquidsoap (automated DJ)                     │
+  │                                          plays your normalized folders, pushes AAC    │
+  │        HLS :8888  ──► onion :80 ──────────────────────────────────────────────┐       │
   └───────────────────────────────────────────────────────────────────────────────┼───────┘
-                                                                                    ▼
+                                                                                  ▼
                             a listener's  Receiver  discovers over LogosMessaging, verifies the
                             station's signature, and plays the HLS stream over Tor
 ```
@@ -54,7 +54,7 @@ key) identity, which is what PSR uses (`"keySource": "autogen"`). See [§7](#7-w
 
 ## 1. Prerequisites — prepare the box
 
-Assumed: a **Debian/Ubuntu-like** Linux box you control (that's what Sneg is). Adjust package names for
+Assumed: a **Debian/Ubuntu-like** Linux box you control. Adjust package names for
 other distros. Install the toolchain:
 
 ```bash
@@ -452,7 +452,7 @@ broadcaster who reconnects the card and presses Start.
 | `RADIO_TOR_BIN` / `RADIO_TORSOCKS_BIN` / `RADIO_TOR_SOCKS_PORT` | (bundled/9050) | Tor overrides | `:851`,`:843`,`:120` |
 | `RADIO_FFPLAY_BIN` | (bundled) | ffplay for local listen | `:830` |
 
-### File map (Sneg reference)
+### File map
 ```
 ~/radio-station/run-app.sh          app launcher (§5.1)
 ~/radio-station/app.log             AppImage stdout/stderr
