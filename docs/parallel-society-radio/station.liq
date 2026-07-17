@@ -20,13 +20,16 @@ def stamp_jingle(_m) = [("artist", "Chair"), ("title", "Parallel Society Radio")
 jingles = metadata.map(update=true, strip=false, insert_missing=true, stamp_jingle, jingles)
 
 # --- idents: interleave Chair's comedic stings with Sterlin's contemplative drops (#37) --------
-# Chair is frequent + short, Sterlin rarer + breathes longer => weight 2:1. Each keeps its own
-# now-playing line, so the announce alternates "Chair — …" and "Lujan Sterlin — Parallel Society".
-idents = rotate(weights=[2, 1], [jingles, spoken])
+# Each keeps its own now-playing line, so the announce alternates "Chair — …" and
+# "Lujan Sterlin — Parallel Society". 1:1 so BOTH surface within a couple of blocks.
+idents = rotate(weights=[1, 1], [jingles, spoken])
 
-# --- programme: talk -> music -> music, with a shuffled ident ~every 6 items ---
+# --- programme: ONE ident between every long-form block. -----------------------------------------
+# PSR's talks/DJ sets are FULL recordings (~45-90 min each), NOT songs — so an ident must be weighted
+# 1:1 with base to land between each block (~hourly). (weights=[1,5] fired an ident only once per
+# ~5 blocks ≈ 4h, so listeners heard neither Chair nor Sterlin for hours — #37.)
 base      = rotate(weights=[1, 2], [talks, djsets])
-programme = rotate(weights=[1, 5], [idents, base])
+programme = rotate(weights=[1, 1], [idents, base])
 
 # --- transitions: built-in crossfade (correctly propagates track metadata; the
 #     hand-rolled cross transition broke now-playing, so we use the stdlib one). -
