@@ -140,9 +140,23 @@ Proven end-to-end across two machines. Hard-won fixes (each was a silent failure
 
 **Now-playing (#35):** `readNowPlaying()` reads `RADIO_NOWPLAYING_FILE` (a file Liquidsoap's `on_metadata`
 writes as `"artist — title"`), sanitizes (strip control chars, cap 120), and `buildAnnouncePayload` adds an
-optional `nowPlaying`. Rides the 15s heartbeat. **Needs ID3 tags on the source tracks** — untagged files →
+optional `nowPlaying`. Rides the 15s heartbeat. **Needs a meaningful name on the source tracks** — untagged files →
 empty `m["title"]/m["artist"]` → empty file → no now-playing. Tag with `ffmpeg -c copy -metadata` (atomic
-`mv`, safe mid-playback), don't build a Liquidsoap filename-fallback.
+`mv`, safe mid-playback) when you control the source.
+
+**EXCEPTION — junk tags (DJ-recorder defaults), refines the old "never filename-fallback" rule (2026-07-21):**
+mixes from Pioneer/Rekordbox etc. carry auto-tags like `title=REC008`, `artist=PIONEER DJ REC` — *worse than
+empty*. There the **filename IS the mix name**; write it directly in `on_metadata` instead of the ID3 title:
+`mix = string.trim(path.remove_extension(path.basename(m["filename"])))` → `"Alisher Sherali — #{mix}"`. Shipped
+for the Khidr "Alisher Sherali" station.
+
+**GOTCHA — `RADIO_NOWPLAYING_FILE` is read at APP-process launch (`qgetenv`, `radio_plugin.cpp:734`), NOT
+per-announce.** Setting it afterward, or restarting **just the radio module** in a running Basecamp, does NOT
+take — the process keeps its launch environment (a user "restarted the core module" and it stayed off). Set it
+in the launch context (headless: systemd `Environment=`; GUI: `~/.config/environment.d/`; one-off:
+`env RADIO_NOWPLAYING_FILE=… ~/logos-basecamp-current.AppImage`), restart the **WHOLE AppImage process**, and
+verify `tr '\0' '\n' < /proc/<pid>/environ | grep RADIO_NOWPLAY`. Cost several round-trips on Khidr.
+→ skill `module-env-read-at-app-launch`.
 
 **Private topics (#49):** `visibility=private` → announce on a per-stream/named topic instead of the public
 directory. The broadcaster can NAME it (radio_ui field shown when Private; radio_module sanitizes it into
@@ -197,3 +211,19 @@ MERGES (keeps the real title/artist), doesn't replace.
 ### Reload requires a process restart; watched dirs don't
 `playlist(reload_mode="watch")` auto-picks-up files dropped into the dir, but a `station.liq` **structure**
 change needs killing + relaunching liquidsoap (interrupts listeners — check MediaMTX `readers=` first).
+
+### Rotation weights must match content LENGTH, not track count (2026-07-16)
+`rotate(weights=[1,5], [idents, base])` = 1 ident per 5 base *items*. Fine for song-length base, but PSR's
+base tracks are FULL talks/DJ sets (**45–90 min each**) → an ident fired only once per ~5 blocks ≈ **4 hours**;
+a listener heard neither Chair nor Sterlin for a couple hours (user caught it). For long-form content weight
+idents **1:1** with base (`rotate([1,1], [idents, base])`) = one ident between every block (~hourly) — the
+densest track-boundary cadence possible (you don't cut a DJ set mid-track). **Check base durations first**
+(timestamp gaps between `Prepared` log lines) before trusting an inherited weight.
+
+### Durability: systemd --user + the single-feeder rule (orphan holds telnet :1234) (2026-07-21)
+Run the liquidsoap feed as a `systemd --user` service (NOT `nohup`) + `loginctl enable-linger` so it survives
+reboot. **Single-feeder rule:** only ONE liquidsoap may push a given RTMP path AND bind the telnet port. A
+stray old feeder (a pre-systemd `nohup` liquidsoap, PPID 1) holding `settings.server.telnet.port` (1234) makes
+the systemd instance **crash-loop on `Address already in use`** — and the broadcast keeps running on the orphan
+(old programme), *masking* the failure. Fix: `ps -eo pid,ppid,etime,args | grep '[l]iquidsoap'` → kill the
+PPID-1 orphan → restart the service. Full headless setup (units + `run-app.sh`) is in `docs/ZERO-TO-STREAMING.md`.
