@@ -148,3 +148,50 @@ _Synthesized 2026-07-05 → radio PROJECT_KNOWLEDGE.md "UI/QML rules (DS + react
 private topics (broadcaster half)". The three raw fails above (DS invention, ComboBox mis-diagnosis, non-
 reactive Start gate) are now permanent rules there; all three were covered by existing skills
 (`logos-design-system-adoption`, `qml-to-universal-module-qtro-backend`) that weren't consulted first._
+
+## Week of 2026-07-16 → 07-21 — Zero-to-Streaming guide (#59), Sterlin interstitials (#37), Alisher Sherali → Khidr migration (synthesized, no inline /log)
+
+### Wins
+- [process] **Zero-to-Streaming guide (#59/#60) grounded in reality, not memory.** Read the live Sneg
+  `systemd --user` units + `run-app.sh` + `station.liq` over SSH, and verified every port/path/env/default
+  claim against `radio_plugin.cpp` before writing — caught + corrected one example (`/v3/paths/get/<path>`,
+  not `/v3/paths/list`) during the verify pass. verify-before-claiming, applied.
+- [process] **Sterlin deploy failure diagnosed before rolling back.** The restart crash-looped on
+  `telnet :1234 Address already in use`; read the journal first → it was a **10-day orphan `nohup`
+  liquidsoap** holding the port, NOT my `station.liq` change. Avoided reverting a good change; killing the
+  orphan also removed a latent bug that would have broken any future restart.
+- [project] **Discovered PSR durability was already done** on Sneg (`logos-radio-psr.service`) by inspecting
+  the live box rather than trusting the halt's stale "TODO".
+- [project] **Rotation-weights bug root-caused from log timestamps** (43–62 min between base `Prepared`
+  lines = long-form content) instead of guessing.
+
+### Fails
+- [project] **Shipped Sterlin with the inherited `rotate([1,5])` weight** → idents ~4 h apart on long-form
+  content; a listener heard neither Chair nor Sterlin for a couple hours (user caught it). Root cause:
+  reused PSR's weight without checking base-track durations (45–90 min DJ sets/talks, not songs).
+  → PROJECT_KNOWLEDGE "Rotation weights must match content LENGTH".
+- [process] **Two coexisting Booth instances on Khidr.** First kill (`pkill -f '\.LogosBasecamp\.elf'`) left
+  "1 proc" and I **relaunched anyway**, creating a second (env-having) instance beside the old (env-less)
+  one. Root cause: skipped the *verify-zero-before-launch* step that `module-kill-and-relaunch` +
+  `find-basecamp-process-by-args` already mandate. Fixed by kill-all → verify 0+0 → launch one. The `/run`
+  discipline exists precisely for this.
+- [project] **Migrated the Alisher Sherali `.liq` as-is** (no `on_metadata`) → audio worked but now-playing
+  was silently absent; user had to point it out. Root cause: copied the original without adding the
+  now-playing wiring PSR's script has.
+- [project] **now-playing stayed off after the user "restarted the core module"** — `RADIO_NOWPLAYING_FILE`
+  is read from the process env at launch (`qgetenv`), so a module reload keeps the old (env-less) env.
+  Several round-trips before I checked `/proc/<pid>/environ`. → NEW skill `module-env-read-at-app-launch`.
+
+### Skills touched
+- Extracted **`module-env-read-at-app-launch`** (basecamp-skills 70-ops, medium — env read at process launch).
+- Applied + bumped **`module-kill-and-relaunch`** (`last_used` 2026-07-21) — verify-zero-before-launch, the
+  step I skipped then applied.
+- Radio lessons → PROJECT_KNOWLEDGE (rotation-weights, single-feeder/systemd durability, junk-tag filename
+  fallback, now-playing env-at-launch). **Refined** the old "never build a filename-fallback" rule — junk
+  DJ-recorder tags (`REC008`/`PIONEER DJ REC`) make the filename the correct source.
+
+---
+
+_Synthesized 2026-07-21 → radio PROJECT_KNOWLEDGE.md (Now-playing env-at-launch gotcha + junk-tag exception;
+Liquidsoap rotation-weights + single-feeder/systemd durability) + basecamp-skills `module-env-read-at-app-launch`
+(+ `module-kill-and-relaunch` last_used bump). No inline /log captures this run._
