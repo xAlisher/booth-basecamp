@@ -1,5 +1,6 @@
 #include "radio_plugin.h"
 #include "station_identity.h"
+#include "station_crypto.h"
 #include "logos_api.h"
 #include "logos_api_client.h"
 #include "logos_object.h"
@@ -111,6 +112,8 @@ void RadioModulePlugin::initLogos(LogosAPI* api)
     logosAPI = api;  // base PluginInterface member — ModuleProxy reads this for IPC. Do NOT shadow it.
     qDebug() << "RadioModulePlugin: initLogos";
     qDebug() << "RadioModulePlugin: station-identity selftest" << (StationIdentity::selfTest() ? "OK" : "FAIL");
+    StationCrypto::init();  // #66 libsodium — must init before any topic/key/AEAD op
+    qDebug() << "RadioModulePlugin: private-stream crypto selftest" << (StationCrypto::selfTest() ? "OK" : "FAIL");
     // Start the delivery-health poll deferred (skill ipc-client-eager-init: don't getClient in initLogos directly).
     QTimer::singleShot(2500, this, [this]{ checkDeliveryHealth(); m_deliveryHealth.start(5000); });
     // #11 — if a stream was active before a restart, re-spawn its origin with the same path/key.
@@ -273,15 +276,32 @@ QString RadioModulePlugin::startStream(const QString& configJson)
     // Onion mode must not deanonymize via the machine hostname (Senty FINDING-3) — it ships in
     // every announce and shows in the listener UI. Use a neutral label.
     m_hostLabel   = (m_privacy == "onion") ? QStringLiteral("anonymous") : QSysInfo::machineHostName();
-    // Public → directory topic; private → a topic the broadcaster names (#49; shared out-of-band),
-    // falling back to the unguessable per-stream path if they didn't name one.
-    QString priv = cfg.value("privateTopic").toString().trimmed().toLower();
-    priv.replace(QRegularExpression(QStringLiteral("[^a-z0-9-]+")), QStringLiteral("-"));
-    priv.remove(QRegularExpression(QStringLiteral("^-+|-+$")));
-    const QString privSeg = priv.isEmpty() ? m_path : priv.left(64);
-    m_announceTopic = (m_visibility == "private")
-                      ? QStringLiteral("/radio-basecamp/1/%1/json").arg(privSeg)
-                      : directoryTopic();
+    // #66 private streams. Three reach models:
+    //   public                    → well-known directory topic, plaintext (unchanged).
+    //   private + pass (NEW)      → secret-derived topic + ENCRYPTED announce. Title = station name;
+    //                               a listener needs BOTH Title and Pass. Relays see only a random hash.
+    //   private, no pass (legacy) → the older obscure-topic form, plaintext (unchanged; still reachable).
+    const QString pass = cfg.value("pass").toString();
+    m_streamPass = (m_visibility == "private") ? pass : QString();
+    m_encrypt    = (m_visibility == "private" && !pass.isEmpty());
+    m_encryptKey.clear();
+    m_announceSeg.clear();
+    if (m_encrypt) {
+        m_announceTopic = StationCrypto::deriveTopic(m_streamName, pass);
+        m_announceSeg   = StationCrypto::deriveTopicSegment(m_streamName, pass);
+        m_encryptKey    = StationCrypto::deriveKey(m_streamName, pass);
+        if (m_encryptKey.isEmpty()) return err("kdf_failed");   // Argon2id OOM — refuse rather than send plaintext
+    } else {
+        // Public → directory topic; legacy private → an unguessable per-stream topic the broadcaster
+        // names (#49; shared out-of-band), falling back to the per-stream path if they didn't name one.
+        QString priv = cfg.value("privateTopic").toString().trimmed().toLower();
+        priv.replace(QRegularExpression(QStringLiteral("[^a-z0-9-]+")), QStringLiteral("-"));
+        priv.remove(QRegularExpression(QStringLiteral("^-+|-+$")));
+        const QString privSeg = priv.isEmpty() ? m_path : priv.left(64);
+        m_announceTopic = (m_visibility == "private")
+                          ? QStringLiteral("/radio-basecamp/1/%1/json").arg(privSeg)
+                          : directoryTopic();
+    }
 
     const QString configPath = writeMediaMtxConfig();
     if (configPath.isEmpty()) return err("config_write_failed");
@@ -326,6 +346,7 @@ QJsonObject RadioModulePlugin::buildCard() const
         {"hlsUrl",  QStringLiteral("http://%1:%2/%3/index.m3u8").arg(ip).arg(hls).arg(m_path)},
         {"name", m_streamName}, {"description", m_description}, {"privacy", m_privacy},
         {"visibility", m_visibility}, {"announceTopic", m_announceTopic},   // #49 surface the (private) topic to share
+        {"encrypted", m_encrypt},   // #66 true ⇒ secret-derived topic + encrypted announce (share Title+Pass)
         {"keySource", m_keySource},                                        // #24 identity tier + fingerprint (out-of-band anchor)
         {"pubkey", m_identity.pubkeyHex()},
         {"fingerprint", StationIdentity::fingerprint(m_identity.pubkeyHex())},
@@ -408,6 +429,7 @@ void RadioModulePlugin::saveStreamState(bool running) const
         {"privacy", m_privacy}, {"path", m_path}, {"streamKey", m_streamKey},
         {"startedAt", m_startedAt}, {"announceTopic", m_announceTopic}, {"hostLabel", m_hostLabel},
         {"keySource", m_keySource},  // #24 identity tier — resume reloads the same signing key
+        {"encrypt", m_encrypt}, {"pass", m_streamPass},  // #66 re-derive the topic+key on auto-resume
         {"running", running}  // #17 false → keep the identity (key) but don't auto-resume on restart
     };
     const QString f = stateFile();
@@ -415,6 +437,8 @@ void RadioModulePlugin::saveStreamState(bool running) const
     QFile out(f);
     if (out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         out.write(QJsonDocument(st).toJson(QJsonDocument::Compact)); out.close();
+        // #66 station.json now holds the private-stream Pass (and already the publish streamKey) — 0600.
+        QFile::setPermissions(f, QFile::ReadOwner | QFile::WriteOwner);
     }
 }
 
@@ -439,6 +463,14 @@ void RadioModulePlugin::resumeStreamIfPersisted()
     m_startedAt     = st.value("startedAt").toVariant().toLongLong();
     m_announceTopic = st.value("announceTopic").toString();
     m_hostLabel     = st.value("hostLabel").toString(QStringLiteral("anonymous"));
+    // #66 re-derive the private-stream topic segment + key from the persisted Pass (Title = name).
+    m_streamPass    = st.value("pass").toString();
+    m_encrypt       = st.value("encrypt").toBool(false);
+    m_encryptKey.clear(); m_announceSeg.clear();
+    if (m_encrypt && !m_streamPass.isEmpty()) {
+        m_announceSeg = StationCrypto::deriveTopicSegment(m_streamName, m_streamPass);
+        m_encryptKey  = StationCrypto::deriveKey(m_streamName, m_streamPass);
+    }
     // #24 — reload the identity tier + signing key so a resumed station keeps the SAME pubkey.
     m_keySource     = st.value("keySource").toString(QStringLiteral("anonymous"));
     m_identity      = StationIdentity();
@@ -476,9 +508,13 @@ QString RadioModulePlugin::stopStream()
     m_heartbeat.stop();
     // #14: tell listeners we're going offline so they drop us at once (not after the 45s TTL).
     if (!m_path.isEmpty() && !m_announceTopic.isEmpty() && ensureDeliveryNode()) {
-        const QString bye = QString::fromUtf8(QJsonDocument(QJsonObject{
+        QString bye = QString::fromUtf8(QJsonDocument(QJsonObject{
             {"v", 1}, {"type", "offline"}, {"path", m_path}}).toJson(QJsonDocument::Compact));
-        m_delivery->invokeRemoteMethod("delivery_module", "send", m_announceTopic, bye);
+        // #66 encrypt the offline beacon too — otherwise a relay learns the private path on teardown.
+        if (m_encrypt && !m_encryptKey.isEmpty())
+            bye = StationCrypto::encryptAnnounce(m_encryptKey, bye.toUtf8(), m_announceSeg);
+        if (!bye.isEmpty())
+            m_delivery->invokeRemoteMethod("delivery_module", "send", m_announceTopic, bye);
     }
     killMediaMtx();
     // Tear down ONLY the hidden-service tor — never the listener SOCKS tor, which may still be in
@@ -492,6 +528,7 @@ QString RadioModulePlugin::stopStream()
     saveStreamState(false);
     m_path.clear(); m_streamKey.clear(); m_streamName.clear(); m_lastStreamState.clear();
     m_announceTopic.clear(); m_startedAt = 0; m_announceSeq = 0;
+    m_encrypt = false; m_encryptKey.clear(); m_streamPass.clear(); m_announceSeg.clear();  // #66
     m_privacy = QStringLiteral("public"); m_onion.clear(); m_onionReady = false; m_onionError.clear();
     return ok();
 }
@@ -762,11 +799,18 @@ QString RadioModulePlugin::announceOnce()
     if (m_privacy == "onion" && !m_onionReady)
         return result(false, "onion_not_ready", QString(), 0);
 
-    const QString payload = buildAnnouncePayload(m_announceSeq);
+    const QString payload = buildAnnouncePayload(m_announceSeq);   // plaintext (also the test-seam view)
     if (!ensureDeliveryNode())
         return result(false, "no_delivery", payload, 0);  // gate passed; delivery just unavailable
 
-    m_delivery->invokeRemoteMethod("delivery_module", "send", m_announceTopic, payload);
+    // #66 private streams: encrypt the announce before it hits the wire so a relay node can't read the
+    // .onion URL / metadata. Public + legacy-private paths send plaintext unchanged.
+    QString wire = payload;
+    if (m_encrypt) {
+        wire = StationCrypto::encryptAnnounce(m_encryptKey, payload.toUtf8(), m_announceSeg);
+        if (wire.isEmpty()) return result(false, "encrypt_failed", payload, 0);
+    }
+    m_delivery->invokeRemoteMethod("delivery_module", "send", m_announceTopic, wire);
     const int seq = m_announceSeq++;
     qDebug() << "RadioModulePlugin: announced seq" << seq << "on" << m_announceTopic;
     return result(true, QString(), payload, seq);

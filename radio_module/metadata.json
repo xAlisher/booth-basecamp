@@ -1,6 +1,6 @@
 {
   "name": "radio_module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "core",
   "category": "media",
   "description": "Decentralized audio broadcast: MediaMTX origin control, ffplay playback, and LogosMessaging discovery (announce/subscribe).",
@@ -17,7 +17,8 @@
         "ffmpeg",
         "mediamtx",
         "tor",
-        "secp256k1"
+        "secp256k1",
+        "libsodium"
       ]
     },
     "external_libraries": [],

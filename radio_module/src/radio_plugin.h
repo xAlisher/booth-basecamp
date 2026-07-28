@@ -135,6 +135,13 @@ private:
     QString   m_announceTopic, m_hostLabel;
     QTimer    m_heartbeat;
 
+    // #66 private streams — secret-derived topic + encrypted announce (see docs/private-stream-protocol.md).
+    // Only for visibility=="private" WITH a pass; public + legacy obscure-topic private stay plaintext.
+    QString    m_streamPass;      // the shared Pass (Title = m_streamName); persisted 0600 for auto-resume
+    bool       m_encrypt = false; // true ⇒ announce is XChaCha20-Poly1305-encrypted before send
+    QByteArray m_encryptKey;      // 32-byte Argon2id key derived from (m_streamName, m_streamPass)
+    QString    m_announceSeg;     // the base32 topic segment — AEAD associated data
+
     // #24 station identity — sign announces so listeners verify the host (pubkey, not name).
     StationIdentity m_identity;
     QString         m_keySource;          // "anonymous" (v:1 unsigned) | "autogen" | "keycard"

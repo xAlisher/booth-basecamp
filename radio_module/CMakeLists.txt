@@ -10,6 +10,7 @@ endif()
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(secp256k1 REQUIRED IMPORTED_TARGET libsecp256k1)   # #24 station-identity signing
+pkg_check_modules(sodium    REQUIRED IMPORTED_TARGET libsodium)      # #66 private-stream KDF + AEAD
 
 logos_module(
     NAME radio_module
@@ -19,10 +20,13 @@ logos_module(
         src/radio_plugin.cpp
         src/station_identity.h
         src/station_identity.cpp
+        src/station_crypto.h
+        src/station_crypto.cpp
     FIND_PACKAGES
         Qt6
     LINK_LIBRARIES
         PkgConfig::secp256k1
+        PkgConfig::sodium
 )
 
 # Tests are NOT wired through CMake. The builder's #unit-tests targets the tutorial's _impl
