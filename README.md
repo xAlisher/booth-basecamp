@@ -16,6 +16,9 @@ module** — Booth is broadcast-only.
 > (`radio_module` + `radio_ui`, ✓ Signed by xAlisher) — see [Install](#install-into-logos-basecamp).
 > Universal API (`modules().radio_module`) + design-system UI. Runs on Basecamp **v0.2+**: Start →
 > MediaMTX → credentials → signed announce published.
+> **v0.2.2** adds **private streams** — broadcast on a **secret-derived topic** (`hash(Title+Passphrase)`)
+> with an **encrypted announce** (`radio_module` 0.1.1 + `radio_ui` 0.2.2). Only listeners with the
+> Title+passphrase discover/decode it; relay nodes see a random-hash topic. Public streams unchanged.
 > **v0.2.1** adds a **first-launch dependency preflight** (#53) — if `mediamtx`/`tor`/`ffmpeg`/`torsocks`
 > are missing, a card shows a checklist + copy-able install command(s) + Re-check (`mediamtx` isn't in apt,
 > so Linux gets an `apt` line + a `nix profile install nixpkgs#mediamtx` line).
@@ -169,10 +172,10 @@ both artifacts — `radio_ui` depends on `radio_module` (module IDs are unchange
 
 ```bash
 PROF=~/.local/share/Logos/LogosBasecamp
-base=https://github.com/xAlisher/booth-basecamp/releases/latest/download
-for f in radio_module radio_ui; do
-  curl -fL -o "$f-linux-amd64.lgx" "$base/$f-linux-amd64.lgx"
-  lgpm --modules-dir "$PROF/modules" --ui-plugins-dir "$PROF/plugins" install --file "$f-linux-amd64.lgx"
+base=https://github.com/xAlisher/booth-basecamp/releases/download/v0.2.2
+for a in radio_module-0.1.1 radio_ui-0.2.2; do
+  curl -fL -o "$a-linux-amd64.lgx" "$base/$a-linux-amd64.lgx"
+  lgpm --modules-dir "$PROF/modules" --ui-plugins-dir "$PROF/plugins" install --file "$a-linux-amd64.lgx"
 done
 ```
 Then launch Basecamp and open **Booth**.
