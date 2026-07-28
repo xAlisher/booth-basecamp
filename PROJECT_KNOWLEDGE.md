@@ -181,12 +181,17 @@ Diagnosed headless: `output.dummy` + `on_metadata(print)` over a `rotate([1,1],[
 printed jingle→talk, custom printed jingle→jingle. Verify metadata flow this way BEFORE deploying to a live
 stream.
 
-### `liq_cross_duration` controls a track's OUTGOING transition, not incoming
-Proven with a tone test (two 5s sines, first stamped `liq_cross_duration=0`, `crossfade duration=3` →
-output = 10s = **hard cut**, so the override shortened the cross AFTER the stamped track). So you **cannot**
-hard-cut *into* a jingle by stamping the jingle — you'd have to stamp the (unknown) preceding track. To get
-"clean voice intro" without a custom transition: give the ident a **3s+ music intro** so the built-in 3s
-crossfade completes before the voice.
+### `liq_cross_duration` affects the OUTGOING transition — but does NOT reliably hard-cut (corrected)
+It shortens a track's *outgoing* cross, not the incoming. **Correction (re-tested liquidsoap 2.2.4, Sneg):**
+`liq_cross_duration=0` does **NOT** give a clean hard cut. A/B tone test (two 5s sines through `crossfade
+duration=3`): default = 7.0s (3s overlap); first track stamped `=0` = **8.4s — ~1.6s overlap still remained**
+(earlier "10s hard cut" note was wrong / version-specific). So the stamp only *reduces* the overlap → tail
+speech is still clipped (#65).
+**Guaranteed fix for spoken word that must play to its end: bake a TRAILING SILENCE PAD ≥ the crossfade
+duration into the FILE** — `ffmpeg -i in -af apad=pad_dur=4 -c:a flac -map_metadata 0 out` — so the crossfade
+overlaps silence, not words (also gives the drop a "breath"). The prep tail-silence-trim REMOVES the natural
+pad, so re-add it for interstitials. Still true: you can't hard-cut *into* a track by stamping it (that's the
+preceding track's outgoing) — give an ident a 3s+ music/room intro if you need a clean voice entry.
 
 ### Announce/discovery vs stream is intentional (booth-android too)
 The node announces continuously (heartbeat), independent of audio being live — that's how a station shows
