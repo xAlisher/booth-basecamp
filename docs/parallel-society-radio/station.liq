@@ -15,6 +15,11 @@ jingles = playlist(mode="randomize", reload_mode="watch", "#{lib}/jingles")
 # Society") and are NOT overwritten by the jingle stamp below.
 spoken  = playlist(mode="randomize", reload_mode="watch", "#{lib}/spoken")
 
+# #65: spoken files carry a ~4s TRAILING SILENCE PAD (baked into the file, not here) so the global 3s
+# crossfade below overlaps that silence, not Lujan's last words. `liq_cross_duration=0` was tried and
+# REJECTED — an A/B tone test showed it only cut the overlap 3s→1.6s, still clipping speech (contradicts
+# the old PROJECT_KNOWLEDGE claim of a clean cut). Pad ≥ crossfade duration is the guaranteed fix.
+
 # Stamp jingle now-playing => announce shows "Chair — Parallel Society Radio" (#32/#35).
 def stamp_jingle(_m) = [("artist", "Chair"), ("title", "Parallel Society Radio")] end
 jingles = metadata.map(update=true, strip=false, insert_missing=true, stamp_jingle, jingles)
