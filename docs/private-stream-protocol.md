@@ -142,15 +142,18 @@ key  = KDF(password = NFC(Pass), salt = salt)                            // 32-b
   rainbow-table resistance. This is inherent to "derive the same key on both ends from `Pass` with
   no exchanged salt" and is acceptable given the memory-hard cost; **state it in the UI copy — a
   weak `Pass` is the weak link.**
-- Argon2id parameters (opslimit/memlimit) are part of the wire contract — pin them in the spec and
-  the test vectors (start from libsodium's `crypto_pwhash` INTERACTIVE profile; revisit before Phase
-  2 merge).
+- **Argon2id parameters are pinned into the wire contract** (both ends + any port MUST use these
+  exact numbers, or keys diverge): libsodium `crypto_pwhash` **INTERACTIVE** profile —
+  `opslimit = 2`, `memlimit = 67108864` (64 MiB), `alg = crypto_pwhash_ALG_ARGON2ID13`. The key is
+  derived **once** per stream-start / per subscribe (not per heartbeat), so the ~50–100 ms cost is
+  one-time.
 
 ### 4.3 AEAD + nonce + wire framing
 
 ```
 nonce      = 24 random bytes (per announce; regenerated every heartbeat)
-ciphertext = XChaCha20-Poly1305-encrypt(key, nonce, plaintext, aad = topicSegment || "\x1f" || "pv=1")
+aad        = UTF-8(topicSegment + "|pv=1")     // the 26-char base32 segment + payload version
+ciphertext = XChaCha20-Poly1305-encrypt(key, nonce, plaintext, aad)
 ```
 
 - **AEAD:** XChaCha20-Poly1305 (see §5 for why over AES-GCM). The 16-byte Poly1305 tag is appended
@@ -197,8 +200,12 @@ cleanly; the large XChaCha nonce fits the stateless/auto-resume reality; and it 
 Android/JS ports on one contract. secp256k1 being "already linked" is a red herring — it is the
 wrong shape of primitive for passphrase-based symmetric encryption.
 
-> **⛔ Human gate:** dependency choice (bundle libsodium into the LGX + Android + all three flakes)
-> and the primitive suite are what need approval. **Do not start Phase 2/3 until this is signed off.**
+> **✅ APPROVED (2026-07-28):** Option B — **libsodium XChaCha20-Poly1305 + Argon2id** signed off;
+> secp256k1 stays for the announce signature. **Verified platform fact:** libsodium is **already
+> bundled** in the Basecamp AppImage (`usr/lib/libsodium.so.26`) and used by `package_downloader`, so
+> it is **not a new-to-Logos dependency**. The desktop modules link it build-time via pkg-config
+> (`PkgConfig::sodium`, mirroring `secp256k1` — the proven in-repo pattern) and bind the
+> platform-bundled `libsodium.so.26` at runtime (soname-compatible); Android adds a libsodium/JS suite.
 
 ---
 
@@ -260,19 +267,26 @@ It is the confidentiality-analogue of `StationIdentity::selfTest()`.
 **booth C++, receiver C++, receiver Android/JS, per ADR-8):**
 
 7. A fixed `(Title, Pass)` → **expected `topic` string** + **expected 32-byte `key` (hex)** +
-   (with a fixed nonce) **expected `ct` (hex)**, committed as test vectors. All three
+   (with a fixed nonce) **expected `ct` (base64)**, committed as test vectors. All three
    implementations assert byte-identity against the same vectors — the same discipline that keeps
    the station-identity signing contract in lockstep.
+
+**Reference vectors** (baked into `StationCrypto::selfTest()`; the receiver C++ + Android/JS ports
+MUST reproduce them): `Title = "Parallel Society Radio"`, `Pass = "correct horse battery staple"` →
+- `topic = /radio-basecamp/1/rdbdcntqiiyuvqrx3c4uuukcuu/json`
+- `key   = 0206f36f316dfac61900a84f3b6d8860e9bd5443851646e25bc8bc2acd2d5ff1`
+- with nonce = 24×`0x07` over a fixed announce, `ct (base64) = JATbvqazwSc1Juu0XKqw0e+4lulqBI4WhBJeOcMwTKRSeUkWqBx7HwlpHF1/ULUwfgaIsngt7k+0DF8kVZcsNEBaqIyWGhUdFDHqEX263olhnMcGdomUj9REcs8UL46xKYPR`
 
 ---
 
 ## 8. Phase gate
 
-- [x] **Phase 1 — this spec.** Awaiting **crypto-primitive sign-off** (§5: libsodium /
-      XChaCha20-Poly1305 + Argon2id).
-- [ ] **Phase 2 — Booth (booth#66):** topic derivation + announce encryption + §7 test. *(blocked on
-      the §5 gate.)*
-- [ ] **Phase 3 — Receiver (receiver#69):** matching derivation + decryption + §7 test (C++ and
-      Android/JS). *(blocked on Phase 2.)*
+- [x] **Phase 1 — this spec.** Crypto primitive **signed off** (§5: libsodium / XChaCha20-Poly1305 +
+      Argon2id).
+- [x] **Phase 2 — Booth (booth#66):** topic derivation + announce encryption + §7 test **GREEN**.
+      Shared `station_crypto.{h,cpp}` + `radio_plugin` wiring + `radio_ui` passphrase field.
+- [x] **Phase 3 — Receiver (receiver#69):** matching derivation + decryption + §7 test (C++). The
+      Android/JS port reproduces the golden vectors — tracked separately.
 
-**STOP at the Phase-1 gate: no crypto is written until the primitive is approved.**
+> The full end-to-end path (real delivery node + Tor + two machines + GUI) is **wetware** — see the
+> 🧫 steps on booth#66 / receiver#69. The byte-level crypto is proven headlessly by §7.
