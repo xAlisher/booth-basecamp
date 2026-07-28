@@ -148,3 +148,48 @@ _Synthesized 2026-07-05 → radio PROJECT_KNOWLEDGE.md "UI/QML rules (DS + react
 private topics (broadcaster half)". The three raw fails above (DS invention, ComboBox mis-diagnosis, non-
 reactive Start gate) are now permanent rules there; all three were covered by existing skills
 (`logos-design-system-adoption`, `qml-to-universal-module-qtro-backend`) that weren't consulted first._
+
+## Week of 2026-07-28 → 07-29 — #65 crossfade, private streams (#66/#69), 2-module signed release (synthesized)
+
+> NB: the 2026-07-21 retro (now-playing/rotation-weights) is on the still-open PR #63 — not yet on main.
+
+### Wins
+- [process] **verify-before-claiming caught TWO "obvious" fixes that were wrong** before shipping:
+  (1) `#65` — `liq_cross_duration=0` to stop spoken-word clipping; an **A/B tone test on Sneg** showed it
+  only cut the overlap 3s→1.6s (still clips), so I padded the files with trailing silence instead;
+  (2) `#69` — the private-stream view-switch, which "matched the build" yet did nothing (QtRO, below).
+- [process] **Private streams shipped via a spec-first background agent + gate.** The crypto choice
+  (libsodium XChaCha20-Poly1305 + Argon2id) was verified **Logos-adjacent** — `libsodium.so.26` is bundled
+  in the AppImage and `package_downloader` links it — before committing. Byte-identical `station_crypto`
+  across both repos; round-trip test green; E2E confirmed live on two machines.
+- [project] **Two-module, two-platform signed release:** booth (linux) + receiver (linux **+ darwin-arm64
+  built on the M1 Mac via `ssh m1`**), all signed, catalog + `modules.alisher.xyz` propagated. Portable
+  builds bundle `libsodium`/`secp256k1` with `$ORIGIN` rpath → load anywhere.
+- [process] **Closed the catalog-trust loop:** verified propagation (domain `logos-repo.json` → `indexUrl`
+  → fresh signed index), found strict-mode rejected the sig (`trustedSigners: []`), applied the documented
+  fix (add the xAlisher DID) to both `docs/` and the hand-synced gh-pages copy.
+
+### Fails
+- [process] **THREE GUI round-trips on the #69 view-switch before catching the QtRO async-return.** First
+  fix returned the topic from a slot and read it in QML — but a **QtRO replica slot's return can't be read
+  synchronously from QML** (the `.rep` header says so). Iterated against the running GUI instead of checking
+  the transport up front; the stale logoscore harness (booth#69) would've caught it headlessly.
+  → skill `qtro-slot-return-not-readable-in-qml`.
+- [ops] **Backed up a module INTO its `plugins/` scan dir** → Basecamp loaded the `.bak` as a duplicate (old
+  version won); chased "stale qmlcache" a cycle before `/proc/<ui-host>/maps` showed the loaded `.so` was the
+  backup dir. → skill `overlay-install-module-gotchas` (also covers the nix-1970-mtime qmlcache trap).
+- [ops] **Khidr backup failed silently** — `ssh khidr 'ts=$(...)'` ran under sher's **fish** login shell
+  (bash-ism rejected). Hit Khidr-is-fish before; wrap remote compound commands in `bash -s`/`bash -c`.
+- [tooling] **`ffmpeg volumedetect` returned empty all session** because `-v error` suppresses its
+  **info-level** stats — every loudness/silence read was blank until I checked the raw output. Use
+  `-hide_banner` (keep info level), not `-v error`, when you need volumedetect/astats numbers.
+
+### Skills touched
+- Extracted **`qtro-slot-return-not-readable-in-qml`** (integration/high) + **`overlay-install-module-gotchas`**
+  (ops/high). Reinforced `module-kill-and-relaunch` (verify-zero) + `module-env-read-at-app-launch`.
+
+---
+
+_Synthesized 2026-07-29 → basecamp-skills (2 new pitfalls) + PROJECT_KNOWLEDGE.md (ffmpeg `volumedetect`
+needs info level; private-streams crypto = libsodium bundled-in-AppImage). Released booth v0.2.2 +
+receiver v0.2.7 (signed, catalog + domain trustedSigners fixed). The 07-21 retro remains on open PR #63._
