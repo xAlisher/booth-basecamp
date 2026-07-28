@@ -20,9 +20,14 @@ directory anyone runs or trusts.
 
 **Alternatives considered:** A central index/directory server or account system (the obvious
 build); the older `logos-waku-module` (direct nim-libp2p, March 2026, now superseded by
-`delivery_module`); an **on-chain directory/program** — rejected: per-announce cost + finality
-latency are the wrong fit for ephemeral 15 s heartbeats, and it reintroduces the
-global-state/consensus dependency the design exists to remove.
+`delivery_module`); an **on-chain directory/program** — a legitimate *decentralized* alternative
+for the **discovery** role (flagged by @vpavlin, 2026-07-28): a program/registry would give
+persistent, enumerate-all-streams-at-once, censorship-resistant discovery — the gap our live-now
+beacons have (see Known limitation). Not chosen because, for *live* radio, the only actionable unit
+is "what's streaming now" (an offline station can't be played anyway), messaging-only discovery
+keeps zero global state / consensus / per-post cost, and this deliverable is deliberately
+blockchain-free. Note the mischaracterization we corrected: blockchain would *replace* heartbeat-as-
+discovery, not *store* heartbeats.
 
 **Rationale:** The differentiator here is *discovery, not delivery* — anyone can run an HLS
 server; what is sovereign is that streams are found over Logos Messaging with no platform in the
@@ -31,7 +36,10 @@ remove.
 
 **Known limitation:** `delivery_module` exposes no Store/history query, so discovery is
 heartbeat-only (see ADR-2) — a station cannot be back-queried on launch, only heard once it
-next announces.
+next announces. **Discovery and liveness are collapsed into one beacon by choice**; if persistent
+"enumerate every stream" discovery is ever wanted, that is the on-chain-directory role above, and
+heartbeats would then drop to liveness-only (~1/min, optionally surfaced in the UI) rather than
+carrying discovery.
 
 ---
 
