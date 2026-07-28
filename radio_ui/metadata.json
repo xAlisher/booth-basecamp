@@ -1,6 +1,6 @@
 {
   "name": "radio_ui",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "ui_qml",
   "interface": "universal",
   "main": "radio_ui_plugin",
