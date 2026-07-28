@@ -20,7 +20,9 @@ directory anyone runs or trusts.
 
 **Alternatives considered:** A central index/directory server or account system (the obvious
 build); the older `logos-waku-module` (direct nim-libp2p, March 2026, now superseded by
-`delivery_module`).
+`delivery_module`); an **on-chain directory/program** — rejected: per-announce cost + finality
+latency are the wrong fit for ephemeral 15 s heartbeats, and it reintroduces the
+global-state/consensus dependency the design exists to remove.
 
 **Rationale:** The differentiator here is *discovery, not delivery* — anyone can run an HLS
 server; what is sovereign is that streams are found over Logos Messaging with no platform in the
@@ -44,7 +46,10 @@ receiving a stream (it returns `not_live` unless the MediaMTX state is `receivin
 
 **Rationale:** With no Store to query, liveness has to be *inferred* from repeated presence.
 Announces are tiny, so 15 s is cheap, and TTL-based membership is self-healing — a crashed or
-restarted station simply republishes and reappears with no cleanup step.
+restarted station simply republishes and reappears with no cleanup step. The interval is
+env-tunable (`RADIO_HEARTBEAT_MS`); shortening it speeds discovery but consumes more messaging
+**rate-limit (RLN) quota**, so 15 s is the default balance — worth surfacing as a streamer setting
+if quota pressure appears.
 
 **Known limitation:** A freshly-opened Receiver is blind to a silent-but-existing station until
 its next beat; there is no "what was on earlier" view.
@@ -226,9 +231,9 @@ v0.2.x — a QML view cannot embed video, so even when OBS pushes A/V, listeners
 
 ## ADR-10: Direct origin delivery in v1; peer-assisted swarm deferred to Phase 2
 
-**Decision:** Every listener pulls HLS directly from the host's single MediaMTX origin (optionally
-Tor-tunnelled). The design is explicit: **decentralized discovery, direct per-host delivery** —
-there is no P2P media swarm in v1.
+**Decision:** Every listener pulls HLS directly from the host's single MediaMTX origin (**Tor-tunnelled
+by default — onion mode per ADR-4; direct-on-LAN is the opt-in local mode**). The design is explicit:
+**decentralized discovery, direct per-host delivery** — there is no P2P media swarm in v1.
 
 **Alternatives considered:** A peer-assisted swarm to remove the origin-uplink limit — deferred to
 Phase 2 ("don't pre-optimize").

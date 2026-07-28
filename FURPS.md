@@ -12,12 +12,12 @@
 ### F1. Start / manage a station
 - **F1.1**: Start a station with `visibility: public | private` and `privacy: onion | lan` (default `onion`).
 - **F1.2**: Booth spawns a MediaMTX origin and mints an ingest URL (WHIP/RTMP/SRT) + stream key.
-- **F1.3**: Stop a station; identity (path + key) persists across stop/start.
+- **F1.3**: Stop / restart a station. (Identity persistence → **U5**.)
 - **F1.4**: Station is persisted (`station.json`) and **auto-resumes on launch** — except Keycard identities (F3.3).
 
 ### F2. Discovery announce over Logos Messaging
 - **F2.1**: Announce a JSON station record over `delivery_module` on the public directory topic `/radio-basecamp/1/directory/json`, or an unguessable private per-stream topic.
-- **F2.2**: Re-announce every 15 s; announce is gated on the origin actually receiving a stream.
+- **F2.2**: Re-announce every 15 s (`RADIO_HEARTBEAT_MS`, configurable). (Liveness-gating → **R4**.)
 - **F2.3**: Announce carries the play URL — a `.onion` URL in onion mode (no IP), a LAN URL in LAN mode.
 
 ### F3. Station identity (secp256k1)
@@ -37,11 +37,13 @@
 - **U2**: First-launch **dependency preflight** — detects `mediamtx`/`tor`/`ffmpeg`/`torsocks`, shows a copy-able install command.
 - **U3**: 3-word fingerprint shown for out-of-band station verification.
 - **U4**: Headless operation supported (Liquidsoap + auto-resume under systemd) for always-on stations.
+- **U5**: Station identity (path + key) **persists across stop/start** — the same station comes back with the same identity.
 
 ## Reliability (R)
 - **R1**: Auto-resume re-spawns MediaMTX + tor and re-announces after a restart (F1.4).
 - **R2**: Announce never falls back to a LAN IP in onion mode (no IP leak), gated on Tor descriptor publish.
 - **R3**: Known caveat — a Tor HS descriptor can go dark on flaky HSDir uploads; a station restart republishes (#38/#46).
+- **R4**: Announce is **gated on the origin actually receiving a stream** (`not_live` otherwise) — a station that stops feeding drops out of discovery instead of advertising a dead stream.
 
 ## Performance (P)
 - **P1**: ~10 s HLS latency (acceptable for broadcast radio).
