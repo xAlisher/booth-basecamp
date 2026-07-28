@@ -44,6 +44,7 @@ Item {
         var cfg = JSON.stringify({
             name: nameField.text,
             visibility: visBox.currentIndex === 1 ? "private" : "public",
+            pass: visBox.currentIndex === 1 ? privPassField.text : "",   // #66 non-empty ⇒ encrypted private stream
             privateTopic: visBox.currentIndex === 1 ? privTopicField.text.trim() : "",
             privacy: onion ? "onion" : "public",
             keySource: root.keySrc[keyBox.currentIndex],          // #24 anonymous | autogen | keycard (radio_module derives)
@@ -350,12 +351,23 @@ Item {
                             }
                         }
                     }
-                    // #49 private → name the topic listeners will subscribe to
+                    // #66 private → a passphrase turns the station into a real private stream: the topic
+                    // is derived from name+passphrase and the announce is encrypted. Leave the passphrase
+                    // blank to fall back to the legacy obscure-topic ("directory name") form (#49).
                     ColumnLayout {
                         visible: visBox.currentIndex === 1
                         Layout.fillWidth: true; spacing: 4
-                        LogosText { text: "Private directory name"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
-                        LogosTextField { id: privTopicField; Layout.fillWidth: true; placeholderText: "e.g. my-secret-room — a private directory to share" }
+                        LogosText { text: "Passphrase (encrypts the stream)"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                        LogosTextField { id: privPassField; Layout.fillWidth: true; placeholderText: "share with listeners — they need the station name + this" }
+                        LogosText {
+                            text: privPassField.text.length > 0
+                                  ? "Encrypted — listeners need “" + nameField.text + "” + this passphrase."
+                                  : "No passphrase → falls back to a shareable directory name below (not encrypted)."
+                            color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText
+                            Layout.fillWidth: true; wrapMode: Text.WordWrap
+                        }
+                        LogosText { text: "Directory name (used only when no passphrase)"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                        LogosTextField { id: privTopicField; Layout.fillWidth: true; enabled: privPassField.text.length === 0; placeholderText: "e.g. my-secret-room — a private directory to share" }
                     }
                     LogosText { text: "Description (optional)"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
                     LogosTextField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
