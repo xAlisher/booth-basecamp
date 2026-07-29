@@ -77,20 +77,21 @@ Per-community sub-directory topics (`/radio-basecamp/1/dir-<community>/json`) no
 **Rationale:** Unlisted-by-unguessable-topic gives invite-only broadcast with zero infrastructure,
 which is the sovereign substitute for an access list.
 
-**Privacy is obscurity, not confidentiality** (flagged in review by @vpavlin, 2026-07-28): the
+**Privacy is obscurity, not confidentiality** (flagged in review by @vpavlin, 2026-07-28): a bare
 unguessable topic hides a stream from casual listeners but **not from relay nodes** — any node
-relaying the shard sees every `/radio-basecamp/1/*` contentTopic *and* can read the (currently
-**unencrypted**) audio payload, so it can enumerate all streams, public and private. Access-by-obscure-topic
-is therefore not real privacy.
+relaying the shard sees every `/radio-basecamp/1/*` contentTopic *and* (on the obscure-topic-only path)
+can read the unencrypted announce, so it can enumerate all streams, public and private.
+Access-by-obscure-topic alone is therefore not real privacy.
 
-**Target model for real private streams** (adopted, not yet built — booth#66 / receiver#69):
-derive the topic from a shared secret and encrypt the payload with it —
-`topic = /radio-basecamp/1/hash(Title+Pass)/json`, `payload = encrypt(payload, Pass)`. A relay node
-then sees only that *a* random-hash stream exists; it cannot identify it or decode the audio without
-`Pass`. The current build still ships the weaker obscure-topic form (no payload encryption); this ADR
-sets hash-topic + payload-encryption as the target for the private path.
+**Real private streams — implemented in v0.2.2** (booth#66 / receiver#69; `radio_module` 0.1.1 +
+`radio_ui` 0.2.2): a private stream broadcasts on a **secret-derived topic**
+`/radio-basecamp/1/hash(Title+Passphrase)/json` with an **encrypted announce** (the announce JSON,
+keyed by the passphrase; the audio itself is already `.onion`-tunnelled per ADR-4). Only a listener
+with the Title+passphrase can discover *and* decode the stream; a relay node sees only that *a*
+random-hash stream exists and can neither identify nor decode it. Public streams are unchanged. This
+closes the obscurity-vs-confidentiality gap above.
 
-**Known limitation:** Anyone who learns the topic (public path) or the `Title+Pass` (target private
+**Known limitation:** Anyone who learns the topic (public path) or the `Title+Passphrase` (private
 path) can listen indefinitely — there is no revocation. The `visibility → announceTopic` derivation
 runs only in `startStream`; auto-resume (ADR-8) reads `announceTopic` verbatim, so changing
 `visibility` alone on a persisted station does not move it off its old topic.

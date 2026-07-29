@@ -1,8 +1,8 @@
 # Booth — Functional Scope (FURPS+)
 
-> **Status:** v0.2.1 shipped (broadcast-only · universal API · design-system UI)
+> **Status:** v0.2.2 shipped (broadcast-only · universal API · design-system UI · **private streams**)
 > **Scope:** Broadcasting only — hosting a station. Listening is the [Receiver](https://github.com/xAlisher/receiver-basecamp)'s job.
-> **Target:** Logos Basecamp (Linux x86_64), testnet-era platform; modules `radio_module` 0.1.0 + `radio_ui` 0.2.1
+> **Target:** Logos Basecamp (Linux x86_64), testnet-era platform; modules `radio_module` 0.1.1 + `radio_ui` 0.2.2
 > **Non-goals (this version):** in-app listening · video display · a P2P media swarm · bundled runtime binaries
 
 ---
@@ -16,7 +16,7 @@
 - **F1.4**: Station is persisted (`station.json`) and **auto-resumes on launch** — except Keycard identities (F3.3).
 
 ### F2. Discovery announce over Logos Messaging
-- **F2.1**: Announce a JSON station record over `delivery_module` on the public directory topic `/radio-basecamp/1/directory/json`, or an unguessable private per-stream topic.
+- **F2.1**: Announce a JSON station record over `delivery_module` — public streams on the well-known directory topic `/radio-basecamp/1/directory/json`; **private streams (v0.2.2) on a secret-derived topic `hash(Title+Passphrase)` with an encrypted announce**, so only holders of the Title+passphrase discover *and* decode it (real confidentiality, not just an obscure topic — see ADR-3).
 - **F2.2**: Re-announce every 15 s (`RADIO_HEARTBEAT_MS`, configurable). (Liveness-gating → **R4**.)
 - **F2.3**: Announce carries the play URL — a `.onion` URL in onion mode (no IP), a LAN URL in LAN mode.
 
