@@ -10,14 +10,26 @@ lib = "/mnt/music/parallel-society-radio"
 talks   = playlist(mode="randomize", reload_mode="watch", "#{lib}/talks")
 djsets  = playlist(mode="randomize", reload_mode="watch", "#{lib}/dj")
 jingles = playlist(mode="randomize", reload_mode="watch", "#{lib}/jingles")
+# Sterlin's spoken-word interstitials (#37) — the contemplative counterweight to Chair's comedic
+# stings. Kept in their OWN source so they retain their file metadata ("Lujan Sterlin — Parallel
+# Society") and are NOT overwritten by the jingle stamp below.
+spoken  = playlist(mode="randomize", reload_mode="watch", "#{lib}/spoken")
 
 # Stamp jingle now-playing => announce shows "Chair — Parallel Society Radio" (#32/#35).
 def stamp_jingle(_m) = [("artist", "Chair"), ("title", "Parallel Society Radio")] end
 jingles = metadata.map(update=true, strip=false, insert_missing=true, stamp_jingle, jingles)
 
-# --- programme: talk -> music -> music, with a shuffled jingle ~every 6 items --
+# --- idents: interleave Chair's comedic stings with Sterlin's contemplative drops (#37) --------
+# Each keeps its own now-playing line, so the announce alternates "Chair — …" and
+# "Lujan Sterlin — Parallel Society". 1:1 so BOTH surface within a couple of blocks.
+idents = rotate(weights=[1, 1], [jingles, spoken])
+
+# --- programme: ONE ident between every long-form block. -----------------------------------------
+# PSR's talks/DJ sets are FULL recordings (~45-90 min each), NOT songs — so an ident must be weighted
+# 1:1 with base to land between each block (~hourly). (weights=[1,5] fired an ident only once per
+# ~5 blocks ≈ 4h, so listeners heard neither Chair nor Sterlin for hours — #37.)
 base      = rotate(weights=[1, 2], [talks, djsets])
-programme = rotate(weights=[1, 5], [jingles, base])
+programme = rotate(weights=[1, 1], [idents, base])
 
 # --- transitions: built-in crossfade (correctly propagates track metadata; the
 #     hand-rolled cross transition broke now-playing, so we use the stdlib one). -
