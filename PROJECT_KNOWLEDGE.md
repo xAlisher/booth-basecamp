@@ -227,3 +227,22 @@ stray old feeder (a pre-systemd `nohup` liquidsoap, PPID 1) holding `settings.se
 the systemd instance **crash-loop on `Address already in use`** — and the broadcast keeps running on the orphan
 (old programme), *masking* the failure. Fix: `ps -eo pid,ppid,etime,args | grep '[l]iquidsoap'` → kill the
 PPID-1 orphan → restart the service. Full headless setup (units + `run-app.sh`) is in `docs/ZERO-TO-STREAMING.md`.
+
+## Private streams (#66/#69, shipped v0.2.2 / receiver v0.2.7)
+`radio_module/src/station_crypto.{h,cpp}` — **libsodium** XChaCha20-Poly1305 (AEAD) + Argon2id (passphrase
+KDF); secp256k1 keeps the announce signature (sign-then-encrypt). Topic = `/radio-basecamp/1/<base32(SHA-256(
+canonical(Title+Pass))[:16])>/json` (`deriveTopic`). Private station: `m_announceTopic = deriveTopic(name,pass)`
++ encrypted payload (metadata + `.onion` URL — **not** audio; HLS-over-Tor is untouched). Receiver derives the
+same topic to subscribe + decrypts. `station_crypto.{h,cpp}` is **byte-identical across booth + receiver** (same
+sha) → interop by construction; the `tests/run-crypto-test.sh` golden vectors are the cheap proof. **libsodium is
+already bundled in the Basecamp AppImage** (`package_downloader` links it), so it's not a new-to-Logos dep; the
+portable build bundles `libsodium.so.26`/`libsecp256k1.so.5` with `$ORIGIN` rpath.
+
+**Receiver UX gotcha (QtRO):** a replica **SLOT's return value can't reach QML** — push the derived topic via a
+`SIGNAL` (see skill `qtro-slot-return-not-readable-in-qml`), or the discovered private station stays filtered
+out by the public-directory view.
+
+### ffmpeg `volumedetect`/`astats` print at INFO level — don't pass `-v error`
+`ffmpeg -v error … -af volumedetect` prints **nothing** (mean/max_volume are info-level, suppressed by `-v error`)
+— every loudness/silence measurement comes back blank. Use `ffmpeg -hide_banner … -af volumedetect -f null -`
+(keeps info level, drops the banner) and grep `mean_volume`/`max_volume`. Bit the whole PSR audio-prep session.

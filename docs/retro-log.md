@@ -195,3 +195,82 @@ reactive Start gate) are now permanent rules there; all three were covered by ex
 _Synthesized 2026-07-21 → radio PROJECT_KNOWLEDGE.md (Now-playing env-at-launch gotcha + junk-tag exception;
 Liquidsoap rotation-weights + single-feeder/systemd durability) + basecamp-skills `module-env-read-at-app-launch`
 (+ `module-kill-and-relaunch` last_used bump). No inline /log captures this run._
+
+## Week of 2026-07-28 → 07-29 — #65 crossfade, private streams (#66/#69), 2-module signed release (synthesized)
+
+### Wins
+- [process] **verify-before-claiming caught TWO "obvious" fixes that were wrong** before shipping:
+  (1) `#65` — `liq_cross_duration=0` to stop spoken-word clipping; an **A/B tone test on Sneg** showed it
+  only cut the overlap 3s→1.6s (still clips), so I padded the files with trailing silence instead;
+  (2) `#69` — the private-stream view-switch, which "matched the build" yet did nothing (QtRO, below).
+- [process] **Private streams shipped via a spec-first background agent + gate.** The crypto choice
+  (libsodium XChaCha20-Poly1305 + Argon2id) was verified **Logos-adjacent** — `libsodium.so.26` is bundled
+  in the AppImage and `package_downloader` links it — before committing. Byte-identical `station_crypto`
+  across both repos; round-trip test green; E2E confirmed live on two machines.
+- [project] **Two-module, two-platform signed release:** booth (linux) + receiver (linux **+ darwin-arm64
+  built on the M1 Mac via `ssh m1`**), all signed, catalog + `modules.alisher.xyz` propagated. Portable
+  builds bundle `libsodium`/`secp256k1` with `$ORIGIN` rpath → load anywhere.
+- [process] **Closed the catalog-trust loop:** verified propagation (domain `logos-repo.json` → `indexUrl`
+  → fresh signed index), found strict-mode rejected the sig (`trustedSigners: []`), applied the documented
+  fix (add the xAlisher DID) to both `docs/` and the hand-synced gh-pages copy.
+
+### Fails
+- [process] **THREE GUI round-trips on the #69 view-switch before catching the QtRO async-return.** First
+  fix returned the topic from a slot and read it in QML — but a **QtRO replica slot's return can't be read
+  synchronously from QML** (the `.rep` header says so). Iterated against the running GUI instead of checking
+  the transport up front; the stale logoscore harness (booth#69) would've caught it headlessly.
+  → skill `qtro-slot-return-not-readable-in-qml`.
+- [ops] **Backed up a module INTO its `plugins/` scan dir** → Basecamp loaded the `.bak` as a duplicate (old
+  version won); chased "stale qmlcache" a cycle before `/proc/<ui-host>/maps` showed the loaded `.so` was the
+  backup dir. → skill `overlay-install-module-gotchas` (also covers the nix-1970-mtime qmlcache trap).
+- [ops] **Khidr backup failed silently** — `ssh khidr 'ts=$(...)'` ran under sher's **fish** login shell
+  (bash-ism rejected). Hit Khidr-is-fish before; wrap remote compound commands in `bash -s`/`bash -c`.
+- [tooling] **`ffmpeg volumedetect` returned empty all session** because `-v error` suppresses its
+  **info-level** stats — every loudness/silence read was blank until I checked the raw output. Use
+  `-hide_banner` (keep info level), not `-v error`, when you need volumedetect/astats numbers.
+
+### Skills touched
+- Extracted **`qtro-slot-return-not-readable-in-qml`** (integration/high) + **`overlay-install-module-gotchas`**
+  (ops/high). Reinforced `module-kill-and-relaunch` (verify-zero) + `module-env-read-at-app-launch`.
+
+---
+
+_Synthesized 2026-07-29 → basecamp-skills (2 new pitfalls) + PROJECT_KNOWLEDGE.md (ffmpeg `volumedetect`
+needs info level; private-streams crypto = libsodium bundled-in-AppImage). Released booth v0.2.2 +
+receiver v0.2.7 (signed, catalog + domain trustedSigners fixed). The 07-21 retro remains on open PR #63._
+
+## 2026-07-29 (cont.) — un-park #68, receiver v0.2.8, macOS deps card verified on a real Mac
+
+### Wins
+- [process] **Reading brew's source beat re-releasing a "fix for the fix."** I suspected the #68 fix was
+  wrong (`HOMEBREW_NO_INSTALL_UPGRADE` doesn't govern dependency upgrades). Instead of shipping a patch, I
+  read `Homebrew/ask.rb` → `confirm?` does `return false if !$stdin.tty?` and `install.rb` `ask_input`
+  **discards** the result → non-TTY stdin (`</dev/null`) skips the prompt and PROCEEDS. The released fix was
+  already correct. → skill `macos-deps-card-brew-noninteractive`.
+- [process] **User re-anchored me on the OUTCOME, not the mechanism.** I fixated on the `[y/n]` prompt; the
+  real failure was *deps not installed + `RECEIVER_*_BIN` not pointed*. Verified the outcome on m1: ran the
+  0.2.8 card block → all 3 tools installed + all 3 env vars → real executable binaries + tools run.
+- [project] **Un-parked #68 cleanly:** its PR merged onto main with private streams **without conflict**
+  (different parts of the same files), bumped 0.2.8, released linux+darwin (darwin on m1), catalog + signed.
+  GUI-confirmed on a real Mac (the exact Amelia failure now clears after restart). #68 closed.
+
+### Fails
+- [ops] **False-negative "deps clean" on the Mac.** Reported `tor/ffmpeg/privoxy` "not installed" from
+  `ssh m1 'brew list …'` — but **brew isn't on the non-login-ssh PATH**, so `brew` was command-not-found and
+  the `|| echo "not installed"` fallback fired. User caught it; they were installed since Jul 22. Rule: on a
+  remote Mac, `export PATH="/opt/homebrew/bin:$PATH"` before any `brew`, and don't trust a `|| echo absent`
+  guard that also fires on brew-not-found.
+- [ops] First `brew uninstall --ignore-dependencies` also removed orphaned deps (`openssl@3`/`ca-certificates`)
+  — which happened to erase the stale-upgrade condition needed to *reproduce* the bug. Plain `brew uninstall`
+  (leave the dep tree) gives a more faithful re-clean.
+
+### Skills touched
+- Extracted **`macos-deps-card-brew-noninteractive`** (integration/high).
+- Catalog trust lesson (empty `trustedSigners` → strict install rejects the xAlisher-signed pkg; fix = add
+  the signer DID to `logos-repo.json` in BOTH `docs/` and the hand-synced gh-pages copy) → recorded here;
+  candidate to fold into `logos-catalog-setup` / the release skill next pass.
+
+---
+
+_Synthesized 2026-07-29 (cont.) → basecamp-skills `macos-deps-card-brew-noninteractive`. Released receiver
+v0.2.8 (#68 deps-card fix, signed linux+darwin, catalog + index). #68 verified on a real Mac + closed._
