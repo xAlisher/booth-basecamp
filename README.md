@@ -1,5 +1,8 @@
 # booth-basecamp
 
+> This is a personal, experimental hobby project. It is not an official Logos product. Not audited.
+
+
 **Booth** — the sovereign, decentralized **broadcaster** for [Logos Basecamp](https://github.com/logos-co/logos-app).
 Point OBS at Booth, hit **Start**, and it announces your station **over LogosMessaging by topic** — no
 central index, no account, no directory server. Each station has a **verifiable, key-based identity**:
