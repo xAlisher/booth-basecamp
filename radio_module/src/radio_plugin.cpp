@@ -631,8 +631,22 @@ bool RadioModulePlugin::ensureDeliveryNode()
     // every peer whose cluster differs — so announces reached nobody on any platform. logos.test is
     // the network upstream guarantees, is on cluster 2, and ships its own bootstrap nodes.
     // Keep in lockstep with receiver-basecamp#90 — announcer and listener must share a network.
+    //
+    // Both knobs are env-overridable so a host can be re-pointed WITHOUT a rebuild — the whole reason
+    // this outage was expensive is that the network was compiled in. It also lets an older host that
+    // predates the logos.test preset still reach that network: logos.test is cluster 2, the same
+    // cluster the logos.dev preset uses, so preset=logos.dev + logos.test entryNodes interoperates.
+    QJsonObject cfg{{"logLevel", "INFO"}, {"mode", "Core"}, {"relay", true}};
+    cfg["preset"] = qEnvironmentVariable("RADIO_DELIVERY_PRESET", QStringLiteral("logos.test"));
+    const QString entry = qEnvironmentVariable("RADIO_DELIVERY_ENTRY_NODES");
+    if (!entry.isEmpty()) {
+        QJsonArray nodes;
+        for (const QString& a : entry.split(QLatin1Char(','), Qt::SkipEmptyParts))
+            nodes.append(a.trimmed());
+        if (!nodes.isEmpty()) cfg["entryNodes"] = nodes;
+    }
     m_delivery->invokeRemoteMethod("delivery_module", "createNode",
-        QStringLiteral("{\"logLevel\":\"INFO\",\"mode\":\"Core\",\"preset\":\"logos.test\",\"relay\":true}"));
+        QString::fromUtf8(QJsonDocument(cfg).toJson(QJsonDocument::Compact)));
     m_delivery->invokeRemoteMethod("delivery_module", "start");
     m_deliveryNodeUp = true;
     // Cache our peer id once for the status pill (avoids per-poll IPC).
