@@ -1,6 +1,6 @@
 {
   "name": "radio_module",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "core",
   "category": "media",
   "description": "Decentralized audio broadcast: MediaMTX origin control, ffplay playback, and LogosMessaging discovery (announce/subscribe).",
