@@ -626,8 +626,13 @@ bool RadioModulePlugin::ensureDeliveryNode()
     if (!logosAPI) return false;
     m_delivery = logosAPI->getClient("delivery_module");
     if (!m_delivery) return false;
+    // #72 logos.test, not logos.dev: the logos.dev fleet migrated Waku cluster 2 → 3
+    // (logos-messaging/logos-delivery#4114) while the shipped preset still says 2, and nwaku drops
+    // every peer whose cluster differs — so announces reached nobody on any platform. logos.test is
+    // the network upstream guarantees, is on cluster 2, and ships its own bootstrap nodes.
+    // Keep in lockstep with receiver-basecamp#90 — announcer and listener must share a network.
     m_delivery->invokeRemoteMethod("delivery_module", "createNode",
-        QStringLiteral("{\"logLevel\":\"INFO\",\"mode\":\"Core\",\"preset\":\"logos.dev\",\"relay\":true}"));
+        QStringLiteral("{\"logLevel\":\"INFO\",\"mode\":\"Core\",\"preset\":\"logos.test\",\"relay\":true}"));
     m_delivery->invokeRemoteMethod("delivery_module", "start");
     m_deliveryNodeUp = true;
     // Cache our peer id once for the status pill (avoids per-poll IPC).
