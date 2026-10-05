@@ -197,6 +197,10 @@ From source:
 
 ### Installing `delivery_module` (required — it does **NOT** ship with the platform)
 
+> **Update (v0.2.4, 2026-10-05):** on Basecamp 0.3.x the package manager installs `delivery_module` as a
+> dependency, and radio_module 0.1.3 is verified against delivery **0.2.3** and **0.3.0**. The v0.1.1 pin
+> below is historical (Basecamp 0.2-era); you only need it on an old host.
+
 `radio_module` depends on `delivery_module`, and **no Basecamp build or catalog bundles it** — you
 install it yourself. Pin it to **`v0.1.1`** (rev `0c346c0c`, metadata version `1.1.0`). Do **not** use
 `main` or another commit: `radio_module` is compiled against v0.1.1's IPC API, and a newer delivery
