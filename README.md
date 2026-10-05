@@ -19,6 +19,11 @@ module** — Booth is broadcast-only.
 > (`radio_module` + `radio_ui`, ✓ Signed by xAlisher) — see [Install](#install-into-logos-basecamp).
 > Universal API (`modules().radio_module`) + design-system UI. Runs on Basecamp **v0.2+**: Start →
 > MediaMTX → credentials → signed announce published.
+> **v0.2.4** ([release](https://github.com/xAlisher/booth-basecamp/releases/tag/v0.2.4)) makes the station
+> **visible again on Basecamp 0.3.x** (`radio_module` 0.1.3): delivery_module 0.3.0 moved the `logos.dev`
+> preset to Waku cluster 3, so Booth now pins `clusterId: 2` + the logos.test fleet and uses OS-assigned
+> ports (a fixed `:60000` could collide at boot). Works on delivery 0.2.x and 0.3.0. RLN stays off for now
+> (plan: #78). `radio_ui` 0.2.4 ships a **full-tile 256x256 icon** (manifest 0.6.0).
 > **v0.2.2** adds **private streams** — broadcast on a **secret-derived topic** (`hash(Title+Passphrase)`)
 > with an **encrypted announce** (`radio_module` 0.1.1 + `radio_ui` 0.2.2). Only listeners with the
 > Title+passphrase discover/decode it; relay nodes see a random-hash topic. Public streams unchanged.
@@ -175,8 +180,8 @@ both artifacts — `radio_ui` depends on `radio_module` (module IDs are unchange
 
 ```bash
 PROF=~/.local/share/Logos/LogosBasecamp
-base=https://github.com/xAlisher/booth-basecamp/releases/download/v0.2.2
-for a in radio_module-0.1.1 radio_ui-0.2.2; do
+base=https://github.com/xAlisher/booth-basecamp/releases/download/v0.2.4
+for a in radio_module-0.1.3 radio_ui-0.2.4; do
   curl -fL -o "$a-linux-amd64.lgx" "$base/$a-linux-amd64.lgx"
   lgpm --modules-dir "$PROF/modules" --ui-plugins-dir "$PROF/plugins" install --file "$a-linux-amd64.lgx"
 done
