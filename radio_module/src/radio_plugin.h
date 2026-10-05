@@ -36,7 +36,7 @@ public:
 
     // PluginInterface
     QString name() const override { return "radio_module"; }
-    QString version() const override { return "0.1.2"; }
+    QString version() const override { return "0.1.3"; }
     // initLogos is NOT a PluginInterface virtual (it's a commented-out TODO in interface.h);
     // the host calls it via the meta-object system, so declare it Q_INVOKABLE, not override.
     Q_INVOKABLE void initLogos(LogosAPI* api);

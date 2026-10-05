@@ -1,0 +1,15 @@
+module radio_module {
+  version "0.1.3"
+  description "Booth core (legacy Qt plugin). Hand-written contract covering only the methods radio_ui calls, so radio_ui can build on the current module builder before radio_module itself moves to the universal interface."
+  category "media"
+  depends [delivery_module]
+
+  method startStream(configJson: tstr) -> tstr description "{ok, path, whipUrl, rtmpUrl, srtUrl, streamKey}"
+  method connectKeycard(privHex: tstr) -> tstr description "{ok, fingerprint, pubkey} | {ok:false, error}"
+  method stopStream() -> tstr description "{ok}"
+  method regenerateKey() -> tstr description "new ingest card"
+  method regenerateOnion() -> tstr description "{ok}"
+  method getStreamStatus() -> tstr description "{state, hlsUrl, privacy, onion, onionReady}"
+  method getStreamCard() -> tstr description "ingest card | {ok:false, error:not_streaming}"
+  method getDeliveryStatus() -> tstr description "{ok, state, peerId}"
+}
