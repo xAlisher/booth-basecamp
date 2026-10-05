@@ -25,7 +25,7 @@ public:
     virtual ~RadioModuleInterface() = default;
 
     // --- Health / scaffold (#1) ---
-    /** Liveness check. @return {"ok":true,"version":"0.1.3"} */
+    /** Liveness check. @return {"ok":true,"version":"0.2.0"} */
     Q_INVOKABLE virtual QString ping() = 0;
 
     // --- Stream / origin (host side) — Epic B/C/D ---

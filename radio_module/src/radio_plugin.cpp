@@ -118,10 +118,10 @@ void RadioModulePlugin::initLogos(LogosAPI* api)
     QTimer::singleShot(2500, this, [this]{ checkDeliveryHealth(); m_deliveryHealth.start(5000); });
     // #11 — if a stream was active before a restart, re-spawn its origin with the same path/key.
     QTimer::singleShot(1500, this, [this]{ resumeStreamIfPersisted(); });
-    emit eventResponse("initialized", QVariantList() << "radio_module" << "0.1.3");
+    emit eventResponse("initialized", QVariantList() << "radio_module" << "0.2.0");
 }
 
-QString RadioModulePlugin::ping() { return ok("\"version\":\"0.1.3\""); }
+QString RadioModulePlugin::ping() { return ok("\"version\":\"0.2.0\""); }
 
 // ---------------------------------------------------------------------------
 // #2 spawn + #3 mint — start/stop the MediaMTX origin and return the OBS card.
@@ -665,8 +665,38 @@ bool RadioModulePlugin::ensureDeliveryNode()
         nodes.append(a.trimmed());
     if (!nodes.isEmpty()) cfg["entryNodes"] = nodes;
     const QString cfgJson = QString::fromUtf8(QJsonDocument(cfg).toJson(QJsonDocument::Compact));
-    qDebug() << "RadioModulePlugin: delivery createNode" << cfgJson;
-    m_delivery->invokeRemoteMethod("delivery_module", "createNode", cfgJson);
+
+    // #79/#80 RLN path (opt-in: RADIO_DELIVERY_RLN=1). The real logos.test preset turns RLN on, and a
+    // PUBLISHER needs an active membership there: delivery_module 0.3.0 queues/fails a send without one
+    // (logos-delivery#4403). So only a host whose liblogos_rln_module holds a funded, active membership
+    // should set this; the module must be loaded before createNode. Older deliveries reject the layered
+    // shape cleanly (createNode fails, no context), and we fall back to the legacy cluster-2 config.
+    bool created = false;
+    if (qEnvironmentVariableIntValue("RADIO_DELIVERY_RLN") == 1) {
+        const QJsonObject testCfg{
+            {"mode", "Core"},
+            {"preset", "logos.test"},
+            {"messagingOverrides", QJsonObject{
+                {"tcp-port", qEnvironmentVariableIntValue("RADIO_DELIVERY_TCP_PORT")},
+                {"discv5-udp-port", qEnvironmentVariableIntValue("RADIO_DELIVERY_UDP_PORT")}}}
+        };
+        const QString testJson = QString::fromUtf8(QJsonDocument(testCfg).toJson(QJsonDocument::Compact));
+        const QVariant r = m_delivery->invokeRemoteMethod("delivery_module", "createNode", testJson);
+        // The reply shape differs by delivery generation: a result map, a JSON string, or a bool.
+        if (r.typeId() == QMetaType::QVariantMap)
+            created = r.toMap().value(QStringLiteral("success")).toBool();
+        else if (r.typeId() == QMetaType::Bool)
+            created = r.toBool();
+        else
+            created = QJsonDocument::fromJson(r.toString().toUtf8()).object().value("success").toBool();
+        qDebug() << "RadioModulePlugin: logos.test (RLN) createNode ->" << r;
+        m_deliveryNetwork = created ? QStringLiteral("logos.test (RLN)") : QString();
+    }
+    if (!created) {
+        qDebug() << "RadioModulePlugin: delivery createNode" << cfgJson;
+        m_delivery->invokeRemoteMethod("delivery_module", "createNode", cfgJson);
+        m_deliveryNetwork = QStringLiteral("cluster 2 (RLN off)");
+    }
     const QVariant started = m_delivery->invokeRemoteMethod("delivery_module", "start");
     qDebug() << "RadioModulePlugin: delivery start ->" << started;
     m_deliveryNodeUp = true;
@@ -697,7 +727,7 @@ QString RadioModulePlugin::getDeliveryStatus()
                         : (m_deliveryReachable || m_deliveryNodeUp) ? QStringLiteral("connected")
                                                                     : QStringLiteral("ready");
     return QString::fromUtf8(QJsonDocument(QJsonObject{
-        {"ok", true}, {"state", state}, {"peerId", m_deliveryPeerId}
+        {"ok", true}, {"state", state}, {"peerId", m_deliveryPeerId}, {"network", m_deliveryNetwork}
     }).toJson(QJsonDocument::Compact));
 }
 

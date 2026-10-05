@@ -36,7 +36,7 @@ public:
 
     // PluginInterface
     QString name() const override { return "radio_module"; }
-    QString version() const override { return "0.1.3"; }
+    QString version() const override { return "0.2.0"; }
     // initLogos is NOT a PluginInterface virtual (it's a commented-out TODO in interface.h);
     // the host calls it via the meta-object system, so declare it Q_INVOKABLE, not override.
     Q_INVOKABLE void initLogos(LogosAPI* api);
@@ -154,6 +154,7 @@ private:
     bool            m_deliveryReachable = false;  // node answered getNodeInfo → pill green
     bool            m_discovering = false;
     QString         m_deliveryPeerId;
+    QString         m_deliveryNetwork;   // which network createNode landed on (#80)
     QTimer          m_deliveryHealth;   // periodic delivery_module reachability check
     QSet<QString>   m_subscribedTopics;
     QMap<QString, QJsonObject> m_stations;  // keyed by path; value carries "_lastSeen" ms (TTL → #11)
