@@ -633,21 +633,42 @@ bool RadioModulePlugin::ensureDeliveryNode()
     // Keep in lockstep with receiver-basecamp#90 — announcer and listener must share a network.
     //
     // Both knobs are env-overridable so a host can be re-pointed WITHOUT a rebuild — the whole reason
-    // this outage was expensive is that the network was compiled in. It also lets an older host that
-    // predates the logos.test preset still reach that network: logos.test is cluster 2, the same
-    // cluster the logos.dev preset uses, so preset=logos.dev + logos.test entryNodes interoperates.
+    // this outage was expensive is that the network was compiled in.
+    //
+    // Pin cluster 2 explicitly; never trust a preset name for the cluster. delivery_module 0.3.0
+    // (nwaku v0.39, Basecamp 0.3.x) moved the logos.dev preset to cluster 3, while the logos.test
+    // preset now turns RLN on and refuses to start without an on-chain membership. So: name logos.dev
+    // (RLN off on every delivery generation), override clusterId=2, dial the logos.test fleet. Verified
+    // 2026-10-05 on BOTH delivery 0.2.3 (nwaku v0.38.1) and 0.3.0 (v0.39.0): cluster=2, live relay peer;
+    // pure logos.dev (cluster 3) had 0 reachable peers. Keep in lockstep with receiver-basecamp.
+    //
+    // Ports are OS-assigned (0): a fixed 60000 collided at boot on Sneg ("Address already in use"),
+    // start failed, and the booth published into a node that never ran — for a whole day.
     QJsonObject cfg{{"logLevel", "INFO"}, {"mode", "Core"}, {"relay", true}};
-    cfg["preset"] = qEnvironmentVariable("RADIO_DELIVERY_PRESET", QStringLiteral("logos.test"));
-    const QString entry = qEnvironmentVariable("RADIO_DELIVERY_ENTRY_NODES");
-    if (!entry.isEmpty()) {
-        QJsonArray nodes;
-        for (const QString& a : entry.split(QLatin1Char(','), Qt::SkipEmptyParts))
-            nodes.append(a.trimmed());
-        if (!nodes.isEmpty()) cfg["entryNodes"] = nodes;
+    cfg["preset"] = qEnvironmentVariable("RADIO_DELIVERY_PRESET", QStringLiteral("logos.dev"));
+    cfg["clusterId"] = qEnvironmentVariableIntValue("RADIO_DELIVERY_CLUSTER_ID") > 0
+        ? qEnvironmentVariableIntValue("RADIO_DELIVERY_CLUSTER_ID") : 2;
+    cfg["tcpPort"] = qEnvironmentVariableIntValue("RADIO_DELIVERY_TCP_PORT");     // unset → 0 → OS-assigned
+    cfg["discv5UdpPort"] = qEnvironmentVariableIntValue("RADIO_DELIVERY_UDP_PORT");
+    QString entry = qEnvironmentVariable("RADIO_DELIVERY_ENTRY_NODES");
+    if (entry.isEmpty()) {
+        entry = QStringLiteral(
+            "/dns4/node-01.do-ams3.logos.test.status.im/tcp/30303/p2p/16Uiu2HAmQ9X2xDfPG3uL77V9piYDhjq14JhKCtcmNYsTMKNqrKCj,"
+            "/dns4/node-02.do-ams3.logos.test.status.im/tcp/30303/p2p/16Uiu2HAmB8NYprrfQrgWVzsJtYWkfjsXbmJEGNMG6othXsQ53BwG,"
+            "/dns4/node-01.gc-us-central1-a.logos.test.status.im/tcp/30303/p2p/16Uiu2HAmF8WtwGPmeGHgYAX2277jHgy5cW9F7zsB8EqUjBZQAZQ3,"
+            "/dns4/node-02.gc-us-central1-a.logos.test.status.im/tcp/30303/p2p/16Uiu2HAmUuXhUW9bdJpzN1kfDziFiUZo4bszTk66cvr7uuyCHXR7,"
+            "/dns4/node-01.ac-cn-hongkong-c.logos.test.status.im/tcp/30303/p2p/16Uiu2HAmL3oU95jh1BZHozn3uNhx8HEneirgr8M1jEAapzXGDqRF,"
+            "/dns4/node-02.ac-cn-hongkong-c.logos.test.status.im/tcp/30303/p2p/16Uiu2HAm28CoBZjpyxsanC8tQpbvZ7bZJnVYuB1EgFzb571qpWsV");
     }
-    m_delivery->invokeRemoteMethod("delivery_module", "createNode",
-        QString::fromUtf8(QJsonDocument(cfg).toJson(QJsonDocument::Compact)));
-    m_delivery->invokeRemoteMethod("delivery_module", "start");
+    QJsonArray nodes;
+    for (const QString& a : entry.split(QLatin1Char(','), Qt::SkipEmptyParts))
+        nodes.append(a.trimmed());
+    if (!nodes.isEmpty()) cfg["entryNodes"] = nodes;
+    const QString cfgJson = QString::fromUtf8(QJsonDocument(cfg).toJson(QJsonDocument::Compact));
+    qDebug() << "RadioModulePlugin: delivery createNode" << cfgJson;
+    m_delivery->invokeRemoteMethod("delivery_module", "createNode", cfgJson);
+    const QVariant started = m_delivery->invokeRemoteMethod("delivery_module", "start");
+    qDebug() << "RadioModulePlugin: delivery start ->" << started;
     m_deliveryNodeUp = true;
     // Cache our peer id once for the status pill (avoids per-poll IPC).
     const QVariant pid = m_delivery->invokeRemoteMethod("delivery_module", "getNodeInfo", QStringLiteral("MyPeerId"));
