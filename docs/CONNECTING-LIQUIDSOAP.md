@@ -21,8 +21,9 @@ You are setting up Liquidsoap as an automated DJ that pushes audio to a Basecamp
 "Booth" (`radio_module`) station's MediaMTX RTMP ingest.
 
 ### 0. Values you need from the human
-Start a stream in Booth (Basecamp → Booth → **Start**). Booth shows an **OBS setup
-card** with an **RTMP Server** and a **Stream Key**. Get both, e.g.:
+Start a stream in Booth (Basecamp → Booth → **Start**). Booth shows a credentials card
+("In your streaming software (OBS, Liquidsoap, ffmpeg…)") with an **RTMP Server** and a
+**Stream Key**. Get both, e.g.:
 - RTMP Server: `rtmp://127.0.0.1:1935`  (use the exact host:port shown; if Liquidsoap
   runs on a **different machine** than Booth, use Booth's **LAN IP**, not `127.0.0.1`)
 - Stream Key:  `ab12cd34?user=publisher&pass=SECRETPASS`
@@ -30,6 +31,10 @@ card** with an **RTMP Server** and a **Stream Key**. Get both, e.g.:
 Split the Stream Key into two parts:
 - **PATH** = everything before `?`   → e.g. `ab12cd34`
 - **PASS** = the value of `pass=`     → e.g. `SECRETPASS`
+
+The key stays the same across Booth restarts (#17), so a Liquidsoap service can keep PATH / PASS
+in its config. The **⟳ New** button next to the Stream Key rotates it: update PATH / PASS, or the feed
+stops.
 
 ### 1. Install Liquidsoap (must have the ffmpeg/AAC encoder)
 ```bash
@@ -88,27 +93,42 @@ PSR_RTMP_PASS="SECRETPASS" \
 liquidsoap station.liq
 ```
 
-### 5. Verify it's live
+### 4b. Tell Booth where now-playing is (optional, for "artist / title" in the announce)
+Booth reads the file named by **`RADIO_NOWPLAYING_FILE`**, not the music folder. Set it in the
+environment **Basecamp** is started with (on the machine running Booth), pointing at the file the
+script writes:
+```bash
+RADIO_NOWPLAYING_FILE="$HOME/radio-music/nowplaying.txt" ./LogosBasecamp-*.AppImage
+```
+Without it, the station announces fine but receivers show no current track.
+
+### 5. Verify it's live and discoverable
 - Liquidsoap logs show it connecting + encoding (no repeated errors).
-- In Booth the status light moves: **Waiting for OBS… → Receiving stream… → 🔴 Live (announcing)**.
-- Once 🔴 Live, Booth announces the station every 15 s; listeners can tap to play.
-- `~/radio-music/nowplaying.txt` updates with the current track.
+- In Booth the source badge goes **waiting for source → source live**.
+- The announce badge must read **announce online**. "Source live" only means audio arrives; the
+  station is discoverable only while announces go out. Booth re-announces every 15 s
+  (`RADIO_HEARTBEAT_MS`), so a receiver lists it within about that long.
+- `~/radio-music/nowplaying.txt` updates with the current track (and, with step 4b, receivers show it).
 
 ### Troubleshooting
 | Symptom | Fix |
 |---------|-----|
-| Booth stuck on **Waiting for OBS…** | Wrong host/port/path/pass. PATH is before `?`, PASS is after `pass=`. Different machine → use Booth's LAN IP, not `127.0.0.1`. |
+| Booth stuck on **waiting for source** | Wrong host/port/path/pass. PATH is before `?`, PASS is after `pass=`. Different machine → use Booth's LAN IP, not `127.0.0.1`. After **⟳ New** (key rotated), update PATH / PASS. |
 | **Failed to connect to server** | The RTMP port (**1935**) must be reachable from where Liquidsoap runs. |
 | **No `%ffmpeg` / AAC error** | Your Liquidsoap lacks ffmpeg — install the official static build. |
 | **Silence for listeners** | Folder must contain playable audio; check Liquidsoap logs show tracks starting. |
+| **Source live, but listeners don't see the station** | The announce isn't going out: check the badge says **announce online**. If it doesn't, the messaging module has no peers or can't be reached; the Basecamp log shows `Failed to acquire plugin/replica for object: "delivery_module"` or `Too many open transports`. Restart Basecamp. On a long-running headless station, raise the open-file limit (`LimitNOFILE=65536` in the systemd unit), see [#85](https://github.com/xAlisher/booth-basecamp/issues/85). |
+| **No current track in receivers** | `RADIO_NOWPLAYING_FILE` isn't set where Basecamp runs, or points at a different file than the script writes (step 4b). |
 
 ---
 
 ## Audio settings (match Booth's ingest)
 - Codec **AAC**, **128 kbps**, **44.1 kHz**, **stereo** — the same target as the OBS path.
 - `crossfade(duration=3.)` for smooth transitions (also propagates track metadata for now-playing).
-- `nowplaying.txt` in the music dir is what `radio_module` reads to put "artist — title"
-  into the station announce (#35).
+- `radio_module` reads the file named by `RADIO_NOWPLAYING_FILE` (step 4b) to put the current
+  track into the station announce (#35); the script above writes it to `nowplaying.txt` in the
+  music dir.
 
 Ports used by the origin: **1935** (RTMP in), **8889** (WHIP in), **8890** (SRT in),
-**8888** (HLS out to listeners), **9997** (local status API).
+**8888** (HLS out to listeners), **9997** (local status API). Each can be changed with
+`RADIO_RTMP_PORT`, `RADIO_WHIP_PORT`, `RADIO_SRT_PORT`, `RADIO_HLS_PORT` and `RADIO_API_PORT`.
