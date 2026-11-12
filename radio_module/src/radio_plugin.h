@@ -17,6 +17,7 @@ class LogosAPI;
 class LogosAPIClient;
 class LogosObject;
 class QProcess;
+class PlaylistSource;
 
 /**
  * @brief radio_module plugin. See radio_interface.h for the API contract.
@@ -36,7 +37,7 @@ public:
 
     // PluginInterface
     QString name() const override { return "radio_module"; }
-    QString version() const override { return "0.1.3"; }
+    QString version() const override { return "0.2.0"; }
     // initLogos is NOT a PluginInterface virtual (it's a commented-out TODO in interface.h);
     // the host calls it via the meta-object system, so declare it Q_INVOKABLE, not override.
     Q_INVOKABLE void initLogos(LogosAPI* api);
@@ -59,6 +60,12 @@ public:
     Q_INVOKABLE QString setVolume(int percent) override;
     Q_INVOKABLE QString setListenBuffer(int seconds) override;
     Q_INVOKABLE QString getPlayerStatus() override;
+    // #86 built-in playlist source
+    Q_INVOKABLE QString setPlaylist(const QString& playlistJson) override;
+    Q_INVOKABLE QString playlistNext() override;
+    Q_INVOKABLE QString playlistPause(bool paused) override;
+    Q_INVOKABLE QString getPlaylistState() override;
+    Q_INVOKABLE QString setNowPlaying(const QString& text) override;
 
     // Test/IPC seam (#5): decode + ingest a station announce. Called by the delivery_module
     // messageReceived handler and directly by tests/direct_test.cpp. Not part of the IPC API.
@@ -177,6 +184,16 @@ private:
     int       m_onionPollTicks = 0;  // bounded descriptor-publish poll (Senty ISSUE-3)
     int       m_onionBootstrapTick = 0;  // tick when tor hit 100% — grace fallback for readiness
     QTimer    m_onionPublishPoll;    // polls tor.log for the descriptor upload
+
+    // #86 built-in playlist source (no OBS / Liquidsoap). The encoder pushes RTMP into our own MediaMTX
+    // over loopback with the publish key, so everything downstream (status, HLS, onion, announce) is unchanged.
+    PlaylistSource* m_playlist = nullptr;
+    QString     m_source = QStringLiteral("external");   // "external" (OBS/Liquidsoap) | "playlist"
+    QJsonObject m_playlistCfg;                           // {items, shuffle, loop}; persisted in station.json
+    QString     m_nowPlayingOverride;                    // set by setNowPlaying(); wins over the track title
+    void        ensurePlaylist();
+    QString     playlistRtmpUrl() const;
+    QString     startPlaylist();                         // "" ok, else an error code
 };
 
 #endif // RADIO_MODULE_PLUGIN_H

@@ -22,6 +22,10 @@ logos_module(
         src/station_identity.cpp
         src/station_crypto.h
         src/station_crypto.cpp
+        src/child_guard.h
+        src/child_guard.cpp
+        src/playlist_source.h
+        src/playlist_source.cpp
     FIND_PACKAGES
         Qt6
     LINK_LIBRARIES

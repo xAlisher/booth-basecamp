@@ -25,7 +25,7 @@ public:
     virtual ~RadioModuleInterface() = default;
 
     // --- Health / scaffold (#1) ---
-    /** Liveness check. @return {"ok":true,"version":"0.1.3"} */
+    /** Liveness check. @return {"ok":true,"version":"0.2.0"} */
     Q_INVOKABLE virtual QString ping() = 0;
 
     // --- Stream / origin (host side) — Epic B/C/D ---
@@ -73,6 +73,22 @@ public:
     Q_INVOKABLE virtual QString setListenBuffer(int seconds) = 0;
     /** @return {state:"stopped"|"playing", station, volume, bufferSec} (#9 #13 #17) */
     Q_INVOKABLE virtual QString getPlayerStatus() = 0;
+
+    // --- Playlist source (#86): stream audio files with no OBS / Liquidsoap ---
+    // startStream({…, source:"playlist", playlist:{items:[file|folder…], shuffle, loop}}) plays it; the
+    // encoder feeds the station's own origin, so status/onion/announce work exactly as with OBS.
+    /** Replace the playlist {items, shuffle, loop}. Live: the new list takes over at its first track;
+     *  otherwise it is stored for the next Start. @return {ok, count} | {ok:false, error:"playlist_empty"} */
+    Q_INVOKABLE virtual QString setPlaylist(const QString& playlistJson) = 0;
+    /** Skip to the next track. @return the playlist state */
+    Q_INVOKABLE virtual QString playlistNext() = 0;
+    /** Pause sends silence (the stream stays up); resume continues where it paused. @return the state */
+    Q_INVOKABLE virtual QString playlistPause(bool paused) = 0;
+    /** @return {ok, active, paused, state:"idle"|"loading"|"playing"|"paused"|"ended"|"empty", index, count,
+     *           current:{file,title,duration,elapsed}, next:{file,title}, shuffle, loop, config, nowPlaying, error?} */
+    Q_INVOKABLE virtual QString getPlaylistState() = 0;
+    /** Manual now-playing text; overrides the track title until cleared with "". @return {ok, nowPlaying} */
+    Q_INVOKABLE virtual QString setNowPlaying(const QString& text) = 0;
 };
 
 #define RadioModuleInterface_iid "org.logos.RadioModuleInterface"

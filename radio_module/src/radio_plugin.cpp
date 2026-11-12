@@ -22,13 +22,16 @@
 #include <QRegularExpression>
 #include <QFileInfo>
 #include <csignal>
-#include <sys/prctl.h>
 #include <dlfcn.h>
+#include "child_guard.h"
+#include "playlist_source.h"
 
 namespace {
-// Make a spawned child receive SIGKILL if THIS process (logos_host) dies — otherwise a
-// kill -9 of the module (e.g. during relaunch) orphans mediamtx/ffplay, leaking the ports.
-void dieWithParent(QProcess* p) { p->setChildProcessModifier([]{ ::prctl(PR_SET_PDEATHSIG, SIGKILL); }); }
+// Don't let a spawned helper outlive logos_host — a kill -9 of the module (e.g. during relaunch) would
+// orphan mediamtx/ffplay/tor and leak the ports. Linux: PR_SET_PDEATHSIG. macOS (#88): no equivalent, so
+// ChildGuard records the pid and reapStale() kills orphans of a dead instance on the next start.
+void dieWithParent(QProcess* p) { ChildGuard::prepare(p); }
+void trackChild(QProcess* p, const QString& program) { ChildGuard::track(p, QFileInfo(program).fileName()); }
 
 // Canonical .onion test (Senty FINDING-1): QUrl::host() is lowercased, but strip a trailing FQDN
 // dot too — otherwise "Abc.onion." dodges endsWith(".onion") and would play OUTSIDE Tor → IP leak.
@@ -45,8 +48,21 @@ QString moduleDir() {
         return QFileInfo(QString::fromUtf8(info.dli_fname)).absolutePath();
     return QString();
 }
+// Install dirs to probe when a helper isn't on PATH. A macOS app started from Finder/Dock gets a minimal
+// PATH (/usr/bin:/bin:/usr/sbin:/sbin) that never includes Homebrew or nix (#88), same idea as the
+// radio_ui deps card's off-PATH probe (#57).
+QStringList helperProbeDirs() {
+    const QString home = QDir::homePath();
+#ifdef Q_OS_MACOS
+    return { "/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin",
+             home + "/.nix-profile/bin", "/nix/var/nix/profiles/default/bin", "/run/current-system/sw/bin" };
+#else
+    return { "/usr/bin", "/usr/local/bin", "/usr/local/sbin", home + "/.nix-profile/bin",
+             "/nix/var/nix/profiles/default/bin", "/run/current-system/sw/bin", "/snap/bin" };
+#endif
+}
 // Resolve a runtime helper binary: explicit env override → bundled (next to the .so, in bin/ or the
-// module dir) → bare name on PATH. Lets the .lgx ship self-contained without a system install.
+// module dir) → PATH → known install dirs → bare name. Lets the .lgx ship self-contained without a system install.
 QString resolveBin(const QString& name, const char* envVar) {
     const QString env = qEnvironmentVariable(envVar);
     if (!env.isEmpty()) return env;
@@ -54,7 +70,11 @@ QString resolveBin(const QString& name, const char* envVar) {
     if (!d.isEmpty())
         for (const QString& c : { d + "/bin/" + name, d + "/" + name })
             if (QFileInfo(c).isExecutable()) return c;
-    return name;  // fall back to PATH
+    const QString onPath = QStandardPaths::findExecutable(name);
+    if (!onPath.isEmpty()) return onPath;
+    const QString off = QStandardPaths::findExecutable(name, helperProbeDirs());
+    if (!off.isEmpty()) return off;
+    return name;  // let QProcess report FailedToStart → *_not_found
 }
 // Environment for spawned SYSTEM binaries (tor/mediamtx/ffplay). The Basecamp AppImage exports
 // LD_LIBRARY_PATH/LD_PRELOAD pointing at its bundled libs; a child like the apt `tor` then loads the
@@ -64,6 +84,11 @@ QProcessEnvironment cleanSpawnEnv() {
     QProcessEnvironment e = QProcessEnvironment::systemEnvironment();
     e.remove(QStringLiteral("LD_LIBRARY_PATH"));
     e.remove(QStringLiteral("LD_PRELOAD"));
+    // macOS (#88): the .app's dyld overrides would likewise make Homebrew binaries load the bundle's dylibs.
+    e.remove(QStringLiteral("DYLD_LIBRARY_PATH"));
+    e.remove(QStringLiteral("DYLD_FALLBACK_LIBRARY_PATH"));
+    e.remove(QStringLiteral("DYLD_FRAMEWORK_PATH"));
+    e.remove(QStringLiteral("DYLD_INSERT_LIBRARIES"));
     return e;
 }
 }
@@ -101,6 +126,7 @@ RadioModulePlugin::RadioModulePlugin(QObject* parent) : QObject(parent)
 RadioModulePlugin::~RadioModulePlugin()
 {
     qDebug() << "RadioModulePlugin: destroyed";
+    if (m_playlist) m_playlist->stop();   // #86 encoder first, so it doesn't reconnect to a dying origin
     killMediaMtx();  // never leak the origin process
     killPlayer();
     killTorHost();
@@ -116,12 +142,16 @@ void RadioModulePlugin::initLogos(LogosAPI* api)
     qDebug() << "RadioModulePlugin: private-stream crypto selftest" << (StationCrypto::selfTest() ? "OK" : "FAIL");
     // Start the delivery-health poll deferred (skill ipc-client-eager-init: don't getClient in initLogos directly).
     QTimer::singleShot(2500, this, [this]{ checkDeliveryHealth(); m_deliveryHealth.start(5000); });
+    // #88 — kill helpers orphaned by a crashed previous instance of this profile (macOS has no PDEATHSIG),
+    // so their ports are free before auto-resume re-spawns them.
+    if (const int reaped = ChildGuard::reapStale())
+        qWarning() << "RadioModulePlugin: reaped" << reaped << "orphaned helper process(es)";
     // #11 — if a stream was active before a restart, re-spawn its origin with the same path/key.
     QTimer::singleShot(1500, this, [this]{ resumeStreamIfPersisted(); });
-    emit eventResponse("initialized", QVariantList() << "radio_module" << "0.1.3");
+    emit eventResponse("initialized", QVariantList() << "radio_module" << "0.2.0");
 }
 
-QString RadioModulePlugin::ping() { return ok("\"version\":\"0.1.3\""); }
+QString RadioModulePlugin::ping() { return ok("\"version\":\"0.2.0\""); }
 
 // ---------------------------------------------------------------------------
 // #2 spawn + #3 mint — start/stop the MediaMTX origin and return the OBS card.
@@ -212,6 +242,7 @@ QString RadioModulePlugin::spawnMediaMtx(const QString& configPath)
         killMediaMtx();
         return notFound ? QStringLiteral("mediamtx_not_found") : QStringLiteral("mediamtx_spawn_failed");
     }
+    trackChild(m_mediamtx, bin);
     // Immediate exit ⇒ bad config or a port already in use (#15 surfaces this to the UI).
     if (m_mediamtx->waitForFinished(400)) {
         qWarning() << "RadioModulePlugin: mediamtx exited immediately:" << m_mediamtx->readAll();
@@ -265,7 +296,18 @@ QString RadioModulePlugin::startStream(const QString& configJson)
             const QJsonObject st = QJsonDocument::fromJson(in.readAll()).object(); in.close();
             m_path      = st.value("path").toString();
             m_streamKey = st.value("streamKey").toString();
+            if (m_playlistCfg.isEmpty()) m_playlistCfg = st.value("playlist").toObject();   // #86 last playlist
         }
+    }
+    // #86 source: "external" (OBS/Liquidsoap push into the origin) or "playlist" (we push it ourselves).
+    m_source = cfg.value("source").toString(QStringLiteral("external"));
+    if (m_source == QLatin1String("playlist")) {
+        if (cfg.contains("playlist")) m_playlistCfg = cfg.value("playlist").toObject();
+        ensurePlaylist();
+        if (m_playlist->setPlaylist(m_playlistCfg) == 0) return err("playlist_empty");
+        const QString ffmpeg = resolveBin(QStringLiteral("ffmpeg"), "RADIO_FFMPEG_BIN");
+        if (!QFileInfo(ffmpeg).isAbsolute() && QStandardPaths::findExecutable(ffmpeg).isEmpty())
+            return err("ffmpeg_not_found");
     }
     if (m_path.isEmpty())      m_path      = randomHex(8);   // 64-bit public stream id
     if (m_streamKey.isEmpty()) m_streamKey = randomHex(16);  // 128-bit secret publish credential (#18)
@@ -307,7 +349,7 @@ QString RadioModulePlugin::startStream(const QString& configJson)
     if (configPath.isEmpty()) return err("config_write_failed");
     // On any failure past here, scrub the runtime dir — mediamtx.yml holds the secret publish
     // password and must not linger on disk after a failed start (Senty round-4 MEDIUM).
-    auto abort = [&](const QString& code) { killMediaMtx();
+    auto abort = [&](const QString& code) { if (m_playlist) m_playlist->stop(); killMediaMtx();
         if (!m_runtimeDir.isEmpty()) QDir(m_runtimeDir).removeRecursively();
         return err(code); };
     const QString spawnErr = spawnMediaMtx(configPath);
@@ -319,6 +361,11 @@ QString RadioModulePlugin::startStream(const QString& configJson)
         m_onion.clear(); m_onionReady = false;
         const QString te = ensureTorHost();
         if (!te.isEmpty()) return abort(te);
+    }
+
+    if (m_source == QLatin1String("playlist")) {
+        const QString pe = startPlaylist();
+        if (!pe.isEmpty()) return abort(pe);
     }
 
     m_heartbeat.start(port("RADIO_HEARTBEAT_MS", 15000));  // #10 re-announce while live
@@ -345,6 +392,7 @@ QJsonObject RadioModulePlugin::buildCard() const
         {"srtUrl",  QStringLiteral("srt://%1:%2?streamid=publish:%3:publisher:%4").arg(ip).arg(srt).arg(m_path).arg(m_streamKey)},
         {"hlsUrl",  QStringLiteral("http://%1:%2/%3/index.m3u8").arg(ip).arg(hls).arg(m_path)},
         {"name", m_streamName}, {"description", m_description}, {"privacy", m_privacy},
+        {"source", m_source},   // #86 "playlist" ⇒ the UI shows the playlist panel instead of the OBS card
         {"visibility", m_visibility}, {"announceTopic", m_announceTopic},   // #49 surface the (private) topic to share
         {"encrypted", m_encrypt},   // #66 true ⇒ secret-derived topic + encrypted announce (share Title+Pass)
         {"keySource", m_keySource},                                        // #24 identity tier + fingerprint (out-of-band anchor)
@@ -371,6 +419,8 @@ QString RadioModulePlugin::regenerateKey()
     if (cfgPath.isEmpty()) return err("config_write_failed");
     const QString se = spawnMediaMtx(cfgPath);
     if (!se.isEmpty()) return err(se);
+    if (m_playlist && m_playlist->isRunning())   // #86 our own encoder must publish with the new key too
+        m_playlist->start(PlaylistSource::rtmpOutput(playlistRtmpUrl(), port("RADIO_PLAYLIST_KBPS", 160)));
     saveStreamState(true);
     emit eventResponse("streamKeyRotated", QVariantList() << m_path);
     return QString::fromUtf8(QJsonDocument(buildCard()).toJson(QJsonDocument::Compact));
@@ -430,6 +480,7 @@ void RadioModulePlugin::saveStreamState(bool running) const
         {"startedAt", m_startedAt}, {"announceTopic", m_announceTopic}, {"hostLabel", m_hostLabel},
         {"keySource", m_keySource},  // #24 identity tier — resume reloads the same signing key
         {"encrypt", m_encrypt}, {"pass", m_streamPass},  // #66 re-derive the topic+key on auto-resume
+        {"source", m_source}, {"playlist", m_playlistCfg},  // #86 auto-resume restarts the playlist
         {"running", running}  // #17 false → keep the identity (key) but don't auto-resume on restart
     };
     const QString f = stateFile();
@@ -463,6 +514,8 @@ void RadioModulePlugin::resumeStreamIfPersisted()
     m_startedAt     = st.value("startedAt").toVariant().toLongLong();
     m_announceTopic = st.value("announceTopic").toString();
     m_hostLabel     = st.value("hostLabel").toString(QStringLiteral("anonymous"));
+    m_source        = st.value("source").toString(QStringLiteral("external"));   // #86
+    m_playlistCfg   = st.value("playlist").toObject();
     // #66 re-derive the private-stream topic segment + key from the persisted Pass (Title = name).
     m_streamPass    = st.value("pass").toString();
     m_encrypt       = st.value("encrypt").toBool(false);
@@ -497,6 +550,15 @@ void RadioModulePlugin::resumeStreamIfPersisted()
         return;
     }
     if (m_privacy == "onion") { m_onion.clear(); m_onionReady = false; ensureTorHost(); }
+    if (m_source == QLatin1String("playlist")) {   // #86 headless stations come back playing
+        ensurePlaylist();
+        if (m_playlist->setPlaylist(m_playlistCfg) > 0) {
+            const QString pe = startPlaylist();
+            if (!pe.isEmpty()) qWarning() << "RadioModulePlugin: resumed stream, playlist failed:" << pe;
+        } else {
+            qWarning() << "RadioModulePlugin: resumed stream, but the saved playlist has no playable files";
+        }
+    }
     m_heartbeat.start(port("RADIO_HEARTBEAT_MS", 15000));
     qDebug() << "RadioModulePlugin: resumed persisted stream" << m_path;
     emit eventResponse("streamStarted", QVariantList() << m_path);
@@ -516,6 +578,8 @@ QString RadioModulePlugin::stopStream()
         if (!bye.isEmpty())
             m_delivery->invokeRemoteMethod("delivery_module", "send", m_announceTopic, bye);
     }
+    if (m_playlist) m_playlist->stop();   // #86
+    m_nowPlayingOverride.clear();
     killMediaMtx();
     // Tear down ONLY the hidden-service tor — never the listener SOCKS tor, which may still be in
     // use by an active onion playback session (Senty ISSUE-2).
@@ -808,6 +872,9 @@ QString RadioModulePlugin::buildAnnouncePayload(int seq) const
 
 QString RadioModulePlugin::readNowPlaying() const
 {
+    // #86 precedence: manual text (setNowPlaying) → the playlist's current track → the Liquidsoap file below.
+    if (!m_nowPlayingOverride.isEmpty()) return m_nowPlayingOverride;
+    if (m_playlist && m_playlist->isRunning()) return m_playlist->nowPlaying();
     // #35 Liquidsoap's on_metadata drops the current "artist — title" into RADIO_NOWPLAYING_FILE; read it,
     // trim, strip control chars + cap length before it rides the announce. Empty env / missing file → no field.
     const QString path = QString::fromLocal8Bit(qgetenv("RADIO_NOWPLAYING_FILE"));
@@ -899,6 +966,7 @@ QString RadioModulePlugin::startFfplay()
         killPlayer();
         return notFound ? QStringLiteral("ffplay_not_found") : QStringLiteral("ffplay_failed");
     }
+    trackChild(m_player, QStringLiteral("ffplay"));   // torsocks execs ffplay, so the live name is ffplay
     return QString();
 }
 
@@ -957,6 +1025,7 @@ bool RadioModulePlugin::startTorProc(QProcess*& proc, const QString& dir, const 
         proc->deleteLater(); proc = nullptr;
         return fail(notFound ? QStringLiteral("tor_not_found") : QStringLiteral("tor_start_failed"));
     }
+    trackChild(proc, bin);
     // Immediate exit ⇒ bad config or the SocksPort/HS port already in use (Senty ISSUE-3) — don't
     // proceed as if Tor were healthy, which would silently break the privacy transport.
     if (proc->waitForFinished(500)) {
@@ -1161,4 +1230,113 @@ QString RadioModulePlugin::getPlayerStatus()
         {"ok", true}, {"state", running ? "playing" : "stopped"},
         {"station", m_playingStation}, {"volume", m_volume}, {"bufferSec", m_listenBufferSec}
     }).toJson(QJsonDocument::Compact));
+}
+
+// ---------------------------------------------------------------------------
+// #86 — built-in playlist source: stream audio files with no OBS and no Liquidsoap.
+// ---------------------------------------------------------------------------
+
+void RadioModulePlugin::ensurePlaylist()
+{
+    if (m_playlist) return;
+    m_playlist = new PlaylistSource(this);
+    m_playlist->setBinaries(resolveBin(QStringLiteral("ffmpeg"), "RADIO_FFMPEG_BIN"),
+                            resolveBin(QStringLiteral("ffprobe"), "RADIO_FFPROBE_BIN"));
+    m_playlist->setEnvironment(cleanSpawnEnv());
+    m_playlist->setBitrate(port("RADIO_PLAYLIST_KBPS", 160));
+    connect(m_playlist, &PlaylistSource::trackChanged, this, [this](const QString& title) {
+        qDebug() << "RadioModulePlugin: now playing" << title;
+        emit eventResponse("nowPlayingChanged", QVariantList() << readNowPlaying());
+        // Re-announce right away so listeners see the new title now, not at the next heartbeat.
+        // announceOnce is gated (live + onion ready), so this is a no-op before the stream is up.
+        if (m_mediamtx && m_nowPlayingOverride.isEmpty())
+            QTimer::singleShot(0, this, [this] { announceOnce(); });
+    });
+    connect(m_playlist, &PlaylistSource::ended, this, [this] {
+        emit eventResponse("playlistEnded", QVariantList() << m_path);
+    });
+}
+
+// Loopback RTMP publish URL for our own encoder (never leaves the machine; carries the secret key).
+QString RadioModulePlugin::playlistRtmpUrl() const
+{
+    return QStringLiteral("rtmp://127.0.0.1:%1/%2?user=publisher&pass=%3")
+        .arg(port("RADIO_RTMP_PORT", 1935)).arg(m_path, m_streamKey);
+}
+
+QString RadioModulePlugin::startPlaylist()
+{
+    ensurePlaylist();
+    if (m_playlist->fileCount() == 0) return QStringLiteral("playlist_empty");
+    m_playlist->start(PlaylistSource::rtmpOutput(playlistRtmpUrl(), port("RADIO_PLAYLIST_KBPS", 160)));
+    emit eventResponse("playlistStarted", QVariantList() << m_playlist->fileCount());
+    return QString();
+}
+
+QString RadioModulePlugin::setPlaylist(const QString& playlistJson)
+{
+    const QJsonDocument doc = QJsonDocument::fromJson(playlistJson.toUtf8());
+    if (!doc.isObject()) return err("bad_json");
+    m_playlistCfg = doc.object();
+    ensurePlaylist();
+    const int n = m_playlist->setPlaylist(m_playlistCfg);
+    // Live playlist station: the new list takes over now (or starts, if the old one was empty).
+    if (m_mediamtx && m_source == QLatin1String("playlist")) {
+        if (n > 0 && !m_playlist->isRunning()) startPlaylist();
+        saveStreamState(true);
+    } else if (!m_mediamtx) {
+        // Not streaming: keep it for the next Start, without flipping a stopped station to auto-resume.
+        QFile in(stateFile());
+        if (in.open(QIODevice::ReadOnly)) {
+            QJsonObject st = QJsonDocument::fromJson(in.readAll()).object();
+            in.close();
+            st["playlist"] = m_playlistCfg;
+            QFile out(stateFile());
+            if (out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                out.write(QJsonDocument(st).toJson(QJsonDocument::Compact));
+                out.close();
+                QFile::setPermissions(stateFile(), QFile::ReadOwner | QFile::WriteOwner);
+            }
+        }
+    }
+    if (n == 0) return err("playlist_empty");
+    return ok(QStringLiteral("\"count\":%1").arg(n));
+}
+
+QString RadioModulePlugin::playlistNext()
+{
+    if (!m_playlist || !m_playlist->isRunning()) return err("not_playing");
+    m_playlist->next();
+    return getPlaylistState();
+}
+
+QString RadioModulePlugin::playlistPause(bool paused)
+{
+    if (!m_playlist || !m_playlist->isRunning()) return err("not_playing");
+    m_playlist->setPaused(paused);
+    emit eventResponse("playlistPaused", QVariantList() << paused);
+    return getPlaylistState();
+}
+
+QString RadioModulePlugin::getPlaylistState()
+{
+    QJsonObject r = m_playlist ? m_playlist->state()
+                               : QJsonObject{{"ok", true}, {"active", false}, {"paused", false},
+                                             {"state", "idle"}, {"count", 0}};
+    r["config"] = m_playlistCfg;
+    r["source"] = m_source;
+    r["nowPlaying"] = readNowPlaying();
+    r["nowPlayingOverride"] = !m_nowPlayingOverride.isEmpty();
+    return QString::fromUtf8(QJsonDocument(r).toJson(QJsonDocument::Compact));
+}
+
+QString RadioModulePlugin::setNowPlaying(const QString& text)
+{
+    QString s = text;
+    s.remove(QRegularExpression(QStringLiteral("[\\x00-\\x1F\\x7F]")));
+    m_nowPlayingOverride = s.trimmed().left(120);
+    emit eventResponse("nowPlayingChanged", QVariantList() << readNowPlaying());
+    if (m_mediamtx) QTimer::singleShot(0, this, [this] { announceOnce(); });
+    return QString::fromUtf8(QJsonDocument(QJsonObject{{"ok", true}, {"nowPlaying", readNowPlaying()}})
+                                 .toJson(QJsonDocument::Compact));
 }

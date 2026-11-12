@@ -4,7 +4,7 @@
 
 
 **Booth** — the sovereign, decentralized **broadcaster** for [Logos Basecamp](https://github.com/logos-co/logos-app).
-Point OBS at Booth, hit **Start**, and it announces your station **over LogosMessaging by topic** — no
+Pick a folder of audio files (or point OBS at Booth), hit **Start**, and it announces your station **over LogosMessaging by topic** — no
 central index, no account, no directory server. Each station has a **verifiable, key-based identity**:
 broadcasters sign their announces, so a station **is its public key**, not a name anyone can grab.
 **Listening lives entirely in the sibling [Receiver](https://github.com/xAlisher/receiver-basecamp)
@@ -53,7 +53,10 @@ discovers the station over LogosMessaging (Waku), verifies its signature, and pl
 
 ## What it does
 
-- **Broadcast** — point OBS at a generated ingest URL; Booth runs the origin and announces the station.
+- **Broadcast a playlist** — pick audio files or a folder; Booth plays them itself, gapless, with the track
+  title as *Now playing*. No OBS, no Liquidsoap (`radio_module` 0.2.0, #86).
+- **Or broadcast live** — point OBS (or any RTMP/WHIP/SRT source) at a generated ingest URL; Booth runs the
+  origin and announces the station.
 - **Sign** — every announce is signed with the station's key (see [Station identity](#station-identity-🔑)),
   so listeners can verify who's broadcasting — rename-proof, impersonation-resistant.
 - **Choose reach** — announce on the **public** directory topic (everyone's Receiver sees it) or a
@@ -74,6 +77,33 @@ discovers the station over LogosMessaging (Waku), verifies its signature, and pl
 
 Discovery and playback happen in the [Receiver](https://github.com/xAlisher/receiver-basecamp) — Booth
 does not listen.
+
+### Broadcast a playlist (no OBS, no Liquidsoap)
+
+1. In **Audio source** pick **Playlist**, then **Add files…** or **Add folder…** (sub-folders included;
+   mp3, flac, m4a, ogg, opus, wav…). Choose **Play in order / Shuffle** and **Loop the list / Stop at the end**.
+2. **Start.** Booth plays the files into its own origin: one encoder for the whole broadcast, so track
+   changes never drop the stream, and the next track is pre-loaded so hand-overs are gapless.
+3. While live: **Now playing** shows the track (artist — title from the tags, else the file name), with
+   **Pause** (listeners hear silence, the stream stays up), **Next**, an optional now-playing text, and
+   edits to the list (**Apply playlist changes**). The playlist survives a restart and auto-resume
+   brings the station back playing.
+
+Only `ffmpeg` (with `ffprobe`), `mediamtx` and `tor` are needed. Headless stations can drive the same
+thing through the API: `startStream({…, source:"playlist", playlist:{items:[…], shuffle, loop}})`,
+`setPlaylist`, `playlistNext`, `playlistPause`, `getPlaylistState`, `setNowPlaying`.
+
+### macOS
+
+Booth builds for **darwin-arm64** (#88). Install the helpers with Homebrew, then install Booth as usual:
+
+```
+brew install mediamtx tor ffmpeg
+```
+
+Booth finds Homebrew and nix binaries even though macOS gives apps launched from Finder a minimal
+`PATH`. macOS has no "kill children with the parent", so Booth records its helper processes and reaps
+any left behind by a crash on its next start.
 
 ### Public vs. private reach
 
@@ -158,11 +188,13 @@ now `delivery_module` (LogosMessaging), which has no history query, so discovery
 | **keycard** | `keycard_module` | [logos](https://github.com/logos-co) | hardware-backed signing (Keycard identity tier) |
 
 External runtime binaries for broadcasting (not yet bundled in the LGX — see Install):
-- **OBS Studio** (capture) + **MediaMTX** (ingest / HLS origin; `scripts/install.sh` drops a static build into the module dir).
-- **tor** (for **Hide IP with Tor** mode — system `apt install tor`, or nix).
-- **ffmpeg** (media plumbing).
+- **MediaMTX** (ingest / HLS origin; `scripts/install.sh` drops a static build into the module dir; `brew install mediamtx` on macOS).
+- **tor** (for **Hide IP with Tor** mode — system `apt install tor`, `brew install tor`, or nix).
+- **ffmpeg** + **ffprobe** (the playlist source, and media plumbing).
+- **OBS Studio** only if you broadcast live instead of a playlist.
 
-Each binary is resolved as: `RADIO_*_BIN` env override → `<module-dir>[/bin]/<tool>` → `PATH`.
+Each binary is resolved as: `RADIO_*_BIN` env override → `<module-dir>[/bin]/<tool>` → `PATH` → known
+install dirs (Homebrew, nix profiles, `/usr/local/bin`).
 
 ## Build
 
@@ -243,6 +275,10 @@ printf linux-amd64 > "$MDIR/delivery_module/variant"
 radio_module/tests/run-direct-test.sh
 # Core — logoscore load/dispatch smoke
 radio_module/tests/run-headless-tests.sh
+# Playlist source + child guard — standalone (Qt + ffmpeg; mediamtx on PATH adds the live-origin test)
+radio_module/tests/run-playlist-test.sh
+# … on the Mac (darwin-arm64): sync + test / build, host from scripts/hosts.local.env (gitignored)
+scripts/mac.sh test && scripts/mac.sh build
 # UI — QML loads + elements instantiate
 cd radio_ui && nix build .#integration-test -L
 ```
@@ -258,7 +294,8 @@ for exactly what each test proves and what still needs the running AppImage.
 | `RADIO_DIRECTORY_TOPIC` | `/radio-basecamp/1/directory/json` | Public discovery topic |
 | `RADIO_HEARTBEAT_MS` | 15000 | Re-announce interval |
 | `RADIO_TTL_MS` | 45000 | A Receiver drops a station after this without a heartbeat |
-| `RADIO_MEDIAMTX_BIN` / `RADIO_FFMPEG_BIN` | `mediamtx` / `ffmpeg` | Binary paths |
+| `RADIO_MEDIAMTX_BIN` / `RADIO_FFMPEG_BIN` / `RADIO_FFPROBE_BIN` / `RADIO_TOR_BIN` | found automatically | Binary paths |
+| `RADIO_PLAYLIST_KBPS` | 160 | Playlist encoder bitrate (AAC) |
 
 ## License
 

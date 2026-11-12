@@ -25,6 +25,10 @@ public slots:
     QString regenerateKey() override;
     QString regenerateOnion() override;
     QString checkDeps() override;                        // #53 re-run broadcast-helper detection → refresh depsJson
+    QString setPlaylist(QString playlistJson) override;  // #87 playlist source
+    QString playlistNext() override;
+    QString playlistPause(bool paused) override;
+    QString setNowPlaying(QString text) override;
 
 protected:
     void onContextReady() override;                       // modules() live

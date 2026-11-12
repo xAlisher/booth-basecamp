@@ -1,5 +1,5 @@
 module radio_module {
-  version "0.1.3"
+  version "0.2.0"
   description "Booth core (legacy Qt plugin). Hand-written contract covering only the methods radio_ui calls, so radio_ui can build on the current module builder before radio_module itself moves to the universal interface."
   category "media"
   depends [delivery_module]
@@ -12,4 +12,9 @@ module radio_module {
   method getStreamStatus() -> tstr description "{state, hlsUrl, privacy, onion, onionReady}"
   method getStreamCard() -> tstr description "ingest card | {ok:false, error:not_streaming}"
   method getDeliveryStatus() -> tstr description "{ok, state, peerId}"
+  method setPlaylist(playlistJson: tstr) -> tstr description "{ok, count} | {ok:false, error:playlist_empty}"
+  method playlistNext() -> tstr description "playlist state"
+  method playlistPause(paused: bool) -> tstr description "playlist state"
+  method getPlaylistState() -> tstr description "{ok, active, paused, state, index, count, current, next, config, nowPlaying}"
+  method setNowPlaying(text: tstr) -> tstr description "{ok, nowPlaying}"
 }
