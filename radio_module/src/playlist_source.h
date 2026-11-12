@@ -48,7 +48,7 @@ public:
     int fileCount() const { return m_files.size(); }
 
     /** Encoder output, e.g. rtmpOutput("rtmp://127.0.0.1:1935/path?user=publisher&pass=…"). */
-    static QStringList rtmpOutput(const QString& url, int kbps = 160);
+    static QStringList rtmpOutput(const QString& url, int kbps = 96);
     /** Start (or restart with a new output) the encoder and begin playing. */
     void start(const QStringList& outputArgs);
     void stop();
@@ -93,7 +93,7 @@ private:
 
     QString m_ffmpeg = QStringLiteral("ffmpeg"), m_ffprobe = QStringLiteral("ffprobe");
     QProcessEnvironment m_env; bool m_hasEnv = false;
-    int m_kbps = 160;
+    int m_kbps = 96;   // Tor onion circuits measured 0.86x real time at 160k (Sneg plays 1.1x at 128k)
 
     QJsonObject m_cfg;
     QStringList m_files;

@@ -434,7 +434,7 @@ QString RadioModulePlugin::regenerateKey()
     const QString se = spawnMediaMtx(cfgPath);
     if (!se.isEmpty()) return err(se);
     if (m_playlist && m_playlist->isRunning())   // #86 our own encoder must publish with the new key too
-        m_playlist->start(PlaylistSource::rtmpOutput(playlistRtmpUrl(), port("RADIO_PLAYLIST_KBPS", 160)));
+        m_playlist->start(PlaylistSource::rtmpOutput(playlistRtmpUrl(), port("RADIO_PLAYLIST_KBPS", 96)));
     saveStreamState(true);
     emit eventResponse("streamKeyRotated", QVariantList() << m_path);
     return QString::fromUtf8(QJsonDocument(buildCard()).toJson(QJsonDocument::Compact));
@@ -1257,7 +1257,7 @@ void RadioModulePlugin::ensurePlaylist()
     const QString ffmpeg = resolveBin(QStringLiteral("ffmpeg"), "RADIO_FFMPEG_BIN");
     m_playlist->setBinaries(ffmpeg, resolveBin(QStringLiteral("ffprobe"), "RADIO_FFPROBE_BIN"));
     m_playlist->setEnvironment(spawnEnvFor(ffmpeg));   // ffmpeg + ffprobe come from the same place
-    m_playlist->setBitrate(port("RADIO_PLAYLIST_KBPS", 160));
+    m_playlist->setBitrate(port("RADIO_PLAYLIST_KBPS", 96));
     connect(m_playlist, &PlaylistSource::trackChanged, this, [this](const QString& title) {
         qDebug() << "RadioModulePlugin: now playing" << title;
         emit eventResponse("nowPlayingChanged", QVariantList() << readNowPlaying());
@@ -1282,7 +1282,7 @@ QString RadioModulePlugin::startPlaylist()
 {
     ensurePlaylist();
     if (m_playlist->fileCount() == 0) return QStringLiteral("playlist_empty");
-    m_playlist->start(PlaylistSource::rtmpOutput(playlistRtmpUrl(), port("RADIO_PLAYLIST_KBPS", 160)));
+    m_playlist->start(PlaylistSource::rtmpOutput(playlistRtmpUrl(), port("RADIO_PLAYLIST_KBPS", 96)));
     emit eventResponse("playlistStarted", QVariantList() << m_playlist->fileCount());
     return QString();
 }

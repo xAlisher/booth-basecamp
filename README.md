@@ -294,7 +294,7 @@ for exactly what each test proves and what still needs the running AppImage.
 | `RADIO_HEARTBEAT_MS` | 15000 | Re-announce interval |
 | `RADIO_TTL_MS` | 45000 | A Receiver drops a station after this without a heartbeat |
 | `RADIO_MEDIAMTX_BIN` / `RADIO_FFMPEG_BIN` / `RADIO_FFPROBE_BIN` / `RADIO_TOR_BIN` | found automatically | Binary paths |
-| `RADIO_PLAYLIST_KBPS` | 160 | Playlist encoder bitrate (AAC) |
+| `RADIO_PLAYLIST_KBPS` | 96 | Playlist encoder bitrate (AAC). Listeners pull it over a Tor onion circuit: 160k measured 0.86x real time (stutters), 128k ~1.1x, so 96k leaves headroom |
 
 ## License
 
