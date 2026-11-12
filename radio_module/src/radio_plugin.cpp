@@ -722,10 +722,24 @@ bool RadioModulePlugin::ensureDeliveryNode()
     //
     // Ports are OS-assigned (0): a fixed 60000 collided at boot on Sneg ("Address already in use"),
     // start failed, and the booth published into a node that never ran — for a whole day.
+    //
+    // 2026-11-12 (#92): "logos.dev + clusterId 2" stopped reaching Receivers. Receiver ≥ 0.5 (and every app
+    // that starts the node with the real logos.test settings) uses 8 shards, so the directory topic lands on
+    // /waku/2/rs/2/2; logos.dev's shard count maps it elsewhere, so Sneg/Miner announced onto a shard
+    // nobody listened to (with healthy peers). Now the Feedback-app recipe: NO preset name (delivery turns
+    // its RLN send gate on for the NAME "logos.test" only, src/rln_presets.cpp) + logos.test spelled out:
+    // cluster 2, 8 shards, 150KiB, discv5 + kad discovery, reliability, the logos.test fleet. Mirrors
+    // logos-delivery's LogosTestConf. Holds until relays validate RLN (≥ v0.4).
     QJsonObject cfg{{"logLevel", "INFO"}, {"mode", "Core"}, {"relay", true}};
-    cfg["preset"] = qEnvironmentVariable("RADIO_DELIVERY_PRESET", QStringLiteral("logos.dev"));
+    cfg["preset"] = qEnvironmentVariable("RADIO_DELIVERY_PRESET", QString());
     cfg["clusterId"] = qEnvironmentVariableIntValue("RADIO_DELIVERY_CLUSTER_ID") > 0
         ? qEnvironmentVariableIntValue("RADIO_DELIVERY_CLUSTER_ID") : 2;
+    cfg["numShardsInNetwork"] = qEnvironmentVariableIntValue("RADIO_DELIVERY_NUM_SHARDS") > 0
+        ? qEnvironmentVariableIntValue("RADIO_DELIVERY_NUM_SHARDS") : 8;
+    cfg["maxMessageSize"] = QStringLiteral("150KiB");
+    cfg["discv5Discovery"] = true;
+    cfg["enableKadDiscovery"] = true;
+    cfg["reliabilityEnabled"] = true;
     cfg["tcpPort"] = qEnvironmentVariableIntValue("RADIO_DELIVERY_TCP_PORT");     // unset → 0 → OS-assigned
     cfg["discv5UdpPort"] = qEnvironmentVariableIntValue("RADIO_DELIVERY_UDP_PORT");
     QString entry = qEnvironmentVariable("RADIO_DELIVERY_ENTRY_NODES");
