@@ -43,6 +43,7 @@ Item {
     function parsePlaylist(s) { if (!s) return {}; try { return JSON.parse(s) || {} } catch (e) { return {} } }
     readonly property var  playlist: parsePlaylist(backend ? backend.playlistJson : "")
     readonly property bool livePlaylist: root.streamCard !== null && root.streamCard.source === "playlist"
+    property int  sourceTab: 0        // #87 setup tabs: 0 Playlist | 1 External (OBS, Liquidsoap…)
     property int  plOrder: 0          // 0 in order | 1 shuffle
     property int  plEnd: 0            // 0 loop | 1 stop at the end
     property bool plDirty: false      // edited since last sent to radio_module (live "Apply")
@@ -94,7 +95,7 @@ Item {
     // ── Backend actions (SLOTs via logos.watch) ────────────────────────────────
     function startStream() {
         var onion = privacyBox.currentIndex === 0   // model[0] = Onion (default)
-        var usePlaylist = sourceBox.currentIndex === 0   // #87
+        var usePlaylist = root.sourceTab === 0   // #87 Playlist tab
         var cfg = JSON.stringify({
             name: nameField.text,
             source: usePlaylist ? "playlist" : "external",
@@ -240,13 +241,14 @@ Item {
         Layout.fillWidth: true; spacing: 6
         RowLayout {
             Layout.fillWidth: true; spacing: 8
+            // compact (the tab already names the section; full-size buttons crushed a label here)
+            LogosButton { text: "Add files…"; implicitWidth: 120; implicitHeight: 32; onClicked: addFilesDialog.open() }
+            LogosButton { text: "Add folder…"; implicitWidth: 120; implicitHeight: 32; onClicked: addFolderDialog.open() }
             LogosText {
-                text: plItems.count === 0 ? "Playlist" : "Playlist · " + plItems.count + (plItems.count === 1 ? " entry" : " entries")
-                color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText
-                Layout.fillWidth: true
+                text: plItems.count === 0 ? "" : plItems.count + (plItems.count === 1 ? " entry" : " entries")
+                color: Theme.palette.textMuted; font.pixelSize: Theme.typography.secondaryText
+                horizontalAlignment: Text.AlignRight; Layout.fillWidth: true
             }
-            LogosButton { text: "Add files…"; onClicked: addFilesDialog.open() }
-            LogosButton { text: "Add folder…"; onClicked: addFolderDialog.open() }
         }
         Rectangle {
             Layout.fillWidth: true
@@ -422,6 +424,24 @@ Item {
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 10
                     visible: root.streamCard === null
+
+                    // #87 where the audio comes from. Tabs, not a dropdown: the two modes set up differently.
+                    LogosTabBar {
+                        Layout.fillWidth: true
+                        currentIndex: root.sourceTab
+                        onCurrentIndexChanged: root.sourceTab = currentIndex
+                        LogosTabButton { text: "Playlist" }
+                        LogosTabButton { text: "External" }
+                    }
+                    LogosText {
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: Theme.typography.secondaryText
+                        color: Theme.palette.textMuted
+                        text: root.sourceTab === 0
+                              ? "Booth plays audio files from this computer. Nothing else to install or run."
+                              : "Stream from OBS, Liquidsoap, ffmpeg or any RTMP / WHIP / SRT source. After Start you'll get a server URL and a stream key to paste into it."
+                    }
+                    PlaylistEditor { visible: root.sourceTab === 0 }
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.palette.borderHairline; Layout.topMargin: 4; Layout.bottomMargin: 4 }
                     LogosText { text: "Station name"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
                     LogosTextField { id: nameField; Layout.fillWidth: true; placeholderText: "What listeners see"; text: "My Station" }
                     RowLayout {
@@ -503,24 +523,9 @@ Item {
                     }
                     LogosText { text: "Description (optional)"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
                     LogosTextField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
-                    // #87 audio source: Booth plays a playlist itself, or receives from streaming software (OBS…)
-                    ColumnLayout {
-                        Layout.fillWidth: true; spacing: 4
-                        LogosText { text: "Audio source"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
-                        LogosComboBox { id: sourceBox; Layout.fillWidth: true; currentIndex: 0
-                                        model: ["Playlist — audio files on this computer", "Streaming software — OBS, Liquidsoap, ffmpeg…"] }
-                        LogosText {
-                            Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: Theme.typography.secondaryText
-                            color: Theme.palette.textMuted
-                            text: sourceBox.currentIndex === 0
-                                  ? "Booth plays the files itself. Nothing else to install or run."
-                                  : "After Start you'll get a server URL and stream key to paste into your streaming software."
-                        }
-                    }
-                    PlaylistEditor { visible: sourceBox.currentIndex === 0 }
                     LogosButton { text: "Start"
                         enabled: nameField.text.length > 0 && (keyBox.currentIndex !== 2 || root.keycardFp.length > 0)  // #7 keycard tier needs Connect first
-                                 && (sourceBox.currentIndex !== 0 || plItems.count > 0)                                  // #87 playlist needs a file
+                                 && (root.sourceTab !== 0 || plItems.count > 0)                                          // #87 playlist needs a file
                         onClicked: root.startStream() }
                 }
 
