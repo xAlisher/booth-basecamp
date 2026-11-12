@@ -404,10 +404,19 @@ Item {
         }
 
         // ── Broadcast body ────────────────────────────────────────────────────
-        Item {
+        // Scrolls: the setup form (identity, privacy, source, playlist) is taller than the panel, and without
+        // this the Start button fell off the bottom with no way to reach it (#87).
+        Flickable {
+            id: bodyFlick
             Layout.fillWidth: true; Layout.fillHeight: true
+            clip: true
+            contentWidth: width
+            contentHeight: bodyCol.implicitHeight + 32
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: bodyFlick.contentHeight > bodyFlick.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded }
             ColumnLayout {
-                anchors.fill: parent; anchors.margins: 16; spacing: 12
+                id: bodyCol
+                x: 16; y: 16; width: bodyFlick.width - 32; spacing: 12
 
                 // setup form
                 ColumnLayout {
@@ -634,7 +643,6 @@ Item {
                         LogosButton { text: "Stop"; onClicked: root.stopStream() }
                     }
                 }
-                Item { Layout.fillHeight: true }
             }
         }
 

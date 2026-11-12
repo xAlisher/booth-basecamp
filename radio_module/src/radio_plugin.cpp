@@ -91,6 +91,20 @@ QProcessEnvironment cleanSpawnEnv() {
     e.remove(QStringLiteral("DYLD_INSERT_LIBRARIES"));
     return e;
 }
+// #91 env for a helper that may be BUNDLED in <moduleDir>/bin: on Linux point the loader at the bundle dir.
+// The bundle's rpath already covers it ($ORIGIN), but the module builder's packaging rewrites rpaths, so this
+// keeps bundled ffmpeg/tor working even if a builder change drops $ORIGIN again. System binaries are untouched.
+QProcessEnvironment spawnEnvFor(const QString& bin) {
+    QProcessEnvironment e = cleanSpawnEnv();
+#ifdef Q_OS_LINUX
+    const QString d = moduleDir();
+    if (!d.isEmpty() && bin.startsWith(d + "/bin/"))
+        e.insert(QStringLiteral("LD_LIBRARY_PATH"), d + "/bin");
+#else
+    Q_UNUSED(bin);
+#endif
+    return e;
+}
 }
 
 // Uniform JSON return shape so the QML bridge is stable. Implemented per-issue
@@ -233,7 +247,7 @@ QString RadioModulePlugin::spawnMediaMtx(const QString& configPath)
     const QString bin = resolveBin(QStringLiteral("mediamtx"), "RADIO_MEDIAMTX_BIN");
     m_mediamtx = new QProcess(this);
     m_mediamtx->setProcessChannelMode(QProcess::MergedChannels);
-    m_mediamtx->setProcessEnvironment(cleanSpawnEnv());  // system binary — not the AppImage's libs
+    m_mediamtx->setProcessEnvironment(spawnEnvFor(bin));  // not the AppImage's libs; bundled → its own (#91)
     dieWithParent(m_mediamtx);   // #15/ops: don't orphan + leak ports on kill -9
     m_mediamtx->start(bin, QStringList() << configPath);
     if (!m_mediamtx->waitForStarted(5000)) {
@@ -1016,7 +1030,7 @@ bool RadioModulePlugin::startTorProc(QProcess*& proc, const QString& dir, const 
 
     proc = new QProcess(this);
     proc->setProcessChannelMode(QProcess::MergedChannels);
-    proc->setProcessEnvironment(cleanSpawnEnv());  // apt tor needs system libevent, not the AppImage's
+    proc->setProcessEnvironment(spawnEnvFor(bin));  // apt tor needs system libevent, not the AppImage's; bundled → its own
     dieWithParent(proc);   // don't orphan tor on kill -9
     proc->start(bin, QStringList() << "-f" << torrc);
     if (!proc->waitForStarted(5000)) {
@@ -1240,9 +1254,9 @@ void RadioModulePlugin::ensurePlaylist()
 {
     if (m_playlist) return;
     m_playlist = new PlaylistSource(this);
-    m_playlist->setBinaries(resolveBin(QStringLiteral("ffmpeg"), "RADIO_FFMPEG_BIN"),
-                            resolveBin(QStringLiteral("ffprobe"), "RADIO_FFPROBE_BIN"));
-    m_playlist->setEnvironment(cleanSpawnEnv());
+    const QString ffmpeg = resolveBin(QStringLiteral("ffmpeg"), "RADIO_FFMPEG_BIN");
+    m_playlist->setBinaries(ffmpeg, resolveBin(QStringLiteral("ffprobe"), "RADIO_FFPROBE_BIN"));
+    m_playlist->setEnvironment(spawnEnvFor(ffmpeg));   // ffmpeg + ffprobe come from the same place
     m_playlist->setBitrate(port("RADIO_PLAYLIST_KBPS", 160));
     connect(m_playlist, &PlaylistSource::trackChanged, this, [this](const QString& title) {
         qDebug() << "RadioModulePlugin: now playing" << title;

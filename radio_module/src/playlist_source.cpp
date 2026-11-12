@@ -15,6 +15,8 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <csignal>
+#include <sys/types.h>
 
 namespace {
 // How far ahead of wall time the encoder is fed. Absorbs tick jitter without adding real latency.
@@ -26,6 +28,11 @@ constexpr qint64 kMaxBacklog = 4LL * PlaylistSource::kBytesPerSec;
 constexpr int kTickMs = 20;
 // Start the next track's decoder this long before the current one ends (its audio waits in the pipe buffer).
 constexpr double kPrefetchSec = 3.0;
+// Decoders run at full speed (no -re: ffmpeg's -re stalls FLAC output for >1 s, then dumps it). Memory stays
+// bounded by flow control instead: SIGSTOP a decoder once this much PCM waits in its pipe buffer, SIGCONT it
+// below the low mark. Format-independent, and the prefetched next track is ready instantly.
+constexpr qint64 kHighWater = 6LL * PlaylistSource::kBytesPerSec;   // ~1.1 MB
+constexpr qint64 kLowWater  = 3LL * PlaylistSource::kBytesPerSec;
 constexpr int kAllFailedRetryMs = 30000;
 
 const QStringList kAudioPatterns = {
@@ -302,7 +309,7 @@ PlaylistSource::Decoder PlaylistSource::spawnDecoder(int orderPos, double startA
     if (m_hasEnv) proc->setProcessEnvironment(m_env);
     ChildGuard::prepare(proc);
     proc->setReadChannel(QProcess::StandardOutput);
-    QStringList args{"-hide_banner", "-loglevel", "error", "-nostdin", "-re"};
+    QStringList args{"-hide_banner", "-loglevel", "error", "-nostdin"};   // paced by flow control, not -re
     if (startAt > 0.5) args << "-ss" << QString::number(startAt, 'f', 2);
     args << "-i" << file << "-vn" << "-sn" << "-dn" << "-map" << "0:a:0"
          << "-f" << "s16le" << "-ar" << QString::number(kRate) << "-ac" << QString::number(kChannels) << "pipe:1";
@@ -340,11 +347,26 @@ void PlaylistSource::killDecoder(Decoder& d)
     if (d.proc) {
         QProcess* p = d.proc;
         disconnect(p, nullptr, this, nullptr);
-        p->kill();
+        p->kill();   // SIGKILL also ends a SIGSTOPped process
         p->waitForFinished(500);
         p->deleteLater();
     }
     d = Decoder{};
+}
+
+void PlaylistSource::throttle(Decoder& d)
+{
+    if (!d.proc || d.finished || d.proc->state() != QProcess::Running) return;
+    const qint64 buffered = d.proc->bytesAvailable();
+    const auto pid = static_cast<pid_t>(d.proc->processId());
+    if (pid <= 0) return;
+    if (!d.stopped && buffered > kHighWater) {
+        ::kill(pid, SIGSTOP);
+        d.stopped = true;
+    } else if (d.stopped && buffered < kLowWater) {
+        ::kill(pid, SIGCONT);
+        d.stopped = false;
+    }
 }
 
 // ------------------------------------------------------------------ controls ---
@@ -484,8 +506,11 @@ void PlaylistSource::tick()
         break;                                          // decoder running, just no data yet
     }
 
+    throttle(m_cur);
+    throttle(m_next);
+
     // Prefetch: start the next decoder a few seconds before this track ends, so its first audio is
-    // already buffered at the hand-over (-re decoders only finish about when their audio is consumed).
+    // already buffered at the hand-over.
     if (m_cur.proc && !m_cur.finished && !m_next.proc && !m_next.finished && !m_paused && m_cur.duration > 0) {
         const double remaining = m_cur.duration - (m_cur.startAt + double(m_cur.bytes) / kBytesPerSec);
         if (remaining < kPrefetchSec) {

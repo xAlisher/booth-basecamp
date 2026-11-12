@@ -15,7 +15,7 @@ class QProcess;
  * Built-in playlist source (#86): streams a list of audio files into the station with no OBS and
  * no Liquidsoap. Modelled on Booth-Android's HlsBroadcaster.
  *
- *   file ─▶ ffmpeg decode (-re, one per track) ─▶ raw PCM ─▶ [this class: the clock] ─▶ ffmpeg encode
+ *   file ─▶ ffmpeg decode (one per track, flow-controlled) ─▶ raw PCM ─▶ [this class: the clock] ─▶ ffmpeg encode
  *                                                                 │ silence when idle     (one per broadcast)
  *                                                                 ▼                     ─▶ output (RTMP into MediaMTX)
  *
@@ -75,13 +75,15 @@ signals:
 private:
     struct Probe { QString title; double duration = 0; };
     struct Decoder { QProcess* proc = nullptr; int pos = -1; QString file, title; double duration = 0;
-                     double startAt = 0; qint64 bytes = 0; bool finished = false; bool failed = false; };
+                     double startAt = 0; qint64 bytes = 0; bool finished = false; bool failed = false;
+                     bool stopped = false; };   // SIGSTOPped because enough PCM is buffered (flow control)
 
     void tick();
     void spawnEncoder();
     void killEncoder();
     Decoder spawnDecoder(int orderPos, double startAt);
     void killDecoder(Decoder& d);
+    void throttle(Decoder& d);             // SIGSTOP above the high-water mark, SIGCONT below the low one
     void advance();                        // current exhausted → promote/prefetch the next track
     int  nextOrderPos(int pos);            // -1 at the end of a non-looping list
     void buildOrder(bool keepFirst);

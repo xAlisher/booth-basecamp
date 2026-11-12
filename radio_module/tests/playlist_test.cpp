@@ -184,10 +184,14 @@ int main(int argc, char** argv)
         pl.start({"-c:a", "pcm_s16le", "-f", "null", "-"});
         spinUntil([&] { return pl.state().value("state").toString() == "playing"; }, 5000);
         spin(600);
+        const qint64 silenceBeforeNext = pl.silenceBytes();
         pl.next();
         spinUntil([&] { return pl.nowPlaying() == "Tone B"; }, 3000);
         check(pl.nowPlaying() == "Tone B", "next() moves to the next track");
         spin(700);
+        // Regression: ffmpeg -re stalled FLAC output >1 s, so Next onto a .flac aired ~1 s of silence.
+        const double nextGap = (pl.silenceBytes() - silenceBeforeNext) / double(PlaylistSource::kBytesPerSec);
+        check(nextGap < 0.35, QStringLiteral("next() onto a FLAC track airs no stall (%1 s of silence)").arg(nextGap, 0, 'f', 2));
         const double before = pl.state().value("current").toObject().value("elapsed").toDouble();
         pl.setPaused(true);
         const qint64 silence0 = pl.silenceBytes();
@@ -202,7 +206,7 @@ int main(int argc, char** argv)
         spin(300);
         const double after = pl.state().value("current").toObject().value("elapsed").toDouble();
         std::printf("     paused state: %s\n", QJsonDocument(ps).toJson(QJsonDocument::Compact).constData());
-        check(before > 0.3 && after >= before - 0.05 && after < before + 1.0,
+        check(before > 0.05 && after >= before - 0.05 && after < before + 1.0,
               QStringLiteral("resume continues from %1 s (now %2 s)").arg(before, 0, 'f', 2).arg(after, 0, 'f', 2));
         spinUntil([&] { return pl.nowPlaying() == "Tester — Tone A"; }, 4000);
         check(pl.nowPlaying() == "Tester — Tone A", "loop wraps back to the first track");

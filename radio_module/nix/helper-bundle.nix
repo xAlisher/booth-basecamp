@@ -63,7 +63,11 @@ in stdenv.mkDerivation {
       add ${tor}/bin/tor
       add ${mediamtx}/bin/mediamtx
       chmod -R u+w $out
-      for f in $out/*; do patchelf --set-rpath '$ORIGIN' "$f" 2>/dev/null || true; done
+      # DT_RPATH (--force-rpath), not DT_RUNPATH: the module builder's portable bundler REPLACES a RUNPATH
+      # with $ORIGIN/.. (bin/ would then look in its parent and miss these libs) but APPENDS to an RPATH,
+      # giving $ORIGIN:$ORIGIN/.. (what Receiver's bundle ends up with). radio_module also sets
+      # LD_LIBRARY_PATH=<bin> for bundled helpers as a safety net.
+      for f in $out/*; do patchelf --force-rpath --set-rpath '$ORIGIN' "$f" 2>/dev/null || true; done
       for exe in ffmpeg ffprobe tor mediamtx; do
         patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 "$out/$exe" 2>/dev/null || true   # static Go binary: no-op
       done
