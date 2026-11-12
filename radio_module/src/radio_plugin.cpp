@@ -434,7 +434,7 @@ QString RadioModulePlugin::regenerateKey()
     const QString se = spawnMediaMtx(cfgPath);
     if (!se.isEmpty()) return err(se);
     if (m_playlist && m_playlist->isRunning())   // #86 our own encoder must publish with the new key too
-        m_playlist->start(PlaylistSource::rtmpOutput(playlistRtmpUrl(), port("RADIO_PLAYLIST_KBPS", 96)));
+        m_playlist->start(PlaylistSource::rtmpOutput(playlistRtmpUrl(), m_playlist->bitrate()));
     saveStreamState(true);
     emit eventResponse("streamKeyRotated", QVariantList() << m_path);
     return QString::fromUtf8(QJsonDocument(buildCard()).toJson(QJsonDocument::Compact));
@@ -1296,7 +1296,7 @@ QString RadioModulePlugin::startPlaylist()
 {
     ensurePlaylist();
     if (m_playlist->fileCount() == 0) return QStringLiteral("playlist_empty");
-    m_playlist->start(PlaylistSource::rtmpOutput(playlistRtmpUrl(), port("RADIO_PLAYLIST_KBPS", 96)));
+    m_playlist->start(PlaylistSource::rtmpOutput(playlistRtmpUrl(), m_playlist->bitrate()));
     emit eventResponse("playlistStarted", QVariantList() << m_playlist->fileCount());
     return QString();
 }
@@ -1305,8 +1305,23 @@ QString RadioModulePlugin::setPlaylist(const QString& playlistJson)
 {
     const QJsonDocument doc = QJsonDocument::fromJson(playlistJson.toUtf8());
     if (!doc.isObject()) return err("bad_json");
-    m_playlistCfg = doc.object();
+    QJsonObject next = doc.object();
     ensurePlaylist();
+    // Only the quality changed while live: re-encode at the new bitrate WITHOUT resetting the list
+    // (setPlaylist would restart from the first track). Listeners get a brief reconnect.
+    auto withoutKbps = [](QJsonObject o) { o.remove(QStringLiteral("kbps")); return o; };
+    if (m_playlist->isRunning() && withoutKbps(next) == withoutKbps(m_playlistCfg)) {
+        const int kbps = next.value("kbps").toInt(0);
+        m_playlistCfg = next;
+        if (kbps > 0 && kbps != m_playlist->bitrate()) {
+            m_playlist->setBitrate(kbps);
+            m_playlist->start(PlaylistSource::rtmpOutput(playlistRtmpUrl(), kbps));   // encoder only
+            emit eventResponse("playlistBitrateChanged", QVariantList() << kbps);
+        }
+        saveStreamState(true);
+        return ok(QStringLiteral("\"count\":%1,\"kbps\":%2").arg(m_playlist->fileCount()).arg(m_playlist->bitrate()));
+    }
+    m_playlistCfg = next;
     const int n = m_playlist->setPlaylist(m_playlistCfg);
     // Live playlist station: the new list takes over now (or starts, if the old one was empty).
     if (m_mediamtx && m_source == QLatin1String("playlist")) {

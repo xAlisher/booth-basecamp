@@ -46,12 +46,14 @@ Item {
     property int  sourceTab: 0        // #87 setup tabs: 0 Playlist | 1 External (OBS, Liquidsoap…)
     property int  plOrder: 0          // 0 in order | 1 shuffle
     property int  plEnd: 0            // 0 loop | 1 stop at the end
+    readonly property var kbpsChoices: [64, 96, 128, 160]
+    property int  plKbpsIdx: 1        // 96 kbps default: listeners pull over Tor (160 measured 0.86x real time)
     property bool plDirty: false      // edited since last sent to radio_module (live "Apply")
     ListModel { id: plItems }         // { path } — files and folders, as chosen
     function plConfig() {
         var items = []
         for (var i = 0; i < plItems.count; i++) items.push(plItems.get(i).path)
-        return { items: items, shuffle: root.plOrder === 1, loop: root.plEnd === 0 }
+        return { items: items, shuffle: root.plOrder === 1, loop: root.plEnd === 0, kbps: root.kbpsChoices[root.plKbpsIdx] }
     }
     function urlToPath(u) {
         var s = u.toString()
@@ -75,6 +77,8 @@ Item {
         for (var i = 0; i < items.length; i++) plItems.append({ "path": items[i] })
         root.plOrder = root.playlist.config.shuffle ? 1 : 0
         root.plEnd = root.playlist.config.loop === false ? 1 : 0
+        var k = root.kbpsChoices.indexOf(root.playlist.config.kbps)
+        if (k >= 0) root.plKbpsIdx = k
     }
     function applyPlaylist() {
         logos.watch(backend.setPlaylist(JSON.stringify(root.plConfig())), function(){ root.plDirty = false }, function(){})
@@ -288,6 +292,17 @@ Item {
                             currentIndex: root.plOrder; onActivated: { root.plOrder = currentIndex; root.plDirty = true } }
             LogosComboBox { model: ["Loop the list", "Stop at the end"]; Layout.fillWidth: true
                             currentIndex: root.plEnd; onActivated: { root.plEnd = currentIndex; root.plDirty = true } }
+        }
+        // Quality = AAC bitrate. Listeners pull the stream over a Tor onion circuit, which is slow and varies:
+        // higher sounds better but stutters more on weak circuits.
+        RowLayout {
+            Layout.fillWidth: true; spacing: 12
+            LogosText { text: "Quality"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+            LogosComboBox {
+                Layout.fillWidth: true
+                model: ["64 kbps — smoothest over Tor", "96 kbps — recommended", "128 kbps — better sound", "160 kbps — may stutter over Tor"]
+                currentIndex: root.plKbpsIdx; onActivated: { root.plKbpsIdx = currentIndex; root.plDirty = true }
+            }
         }
     }
 

@@ -39,9 +39,11 @@ public:
 
     void setBinaries(const QString& ffmpeg, const QString& ffprobe) { m_ffmpeg = ffmpeg; m_ffprobe = ffprobe; }
     void setEnvironment(const QProcessEnvironment& env) { m_env = env; m_hasEnv = true; }
-    void setBitrate(int kbps) { m_kbps = kbps; }
+    void setBitrate(int kbps) { if (kbps > 0) m_kbps = kbps; }
+    int  bitrate() const { return m_kbps; }
 
-    /** {items:[file|folder,…], shuffle:bool, loop:bool}. Folders expand recursively (natural sort).
+    /** {items:[file|folder,…], shuffle:bool, loop:bool, kbps?:int}. Folders expand recursively (natural sort).
+     *  kbps (if given) sets the encoder bitrate used by the NEXT start(); see RadioModulePlugin::setPlaylist.
      *  While running, the new list takes over at its first track. @return number of playable files. */
     int setPlaylist(const QJsonObject& cfg);
     QJsonObject config() const;          // the {items, shuffle, loop} given, for persistence

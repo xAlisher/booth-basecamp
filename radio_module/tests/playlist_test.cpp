@@ -222,6 +222,10 @@ int main(int argc, char** argv)
         check(pl.setPlaylist(QJsonObject{{"items", QJsonArray{tmp.path() + "/nope", music + "/notes.txt"}}}) == 0,
               "missing paths and non-audio files give an empty playlist");
         check(pl.state().value("error").toString() == "playlist_empty", "empty playlist reports playlist_empty");
+        pl.setPlaylist(QJsonObject{{"items", QJsonArray{music}}, {"kbps", 64}});
+        check(pl.bitrate() == 64 && pl.config().value("kbps").toInt() == 64, "kbps from the playlist config sets the encoder bitrate");
+        pl.setPlaylist(QJsonObject{{"items", QJsonArray{music}}, {"kbps", 9999}});
+        check(pl.bitrate() == 64, "an out-of-range kbps is ignored");
     }
 
     // ===== 4. Live MediaMTX path stays 'ready' across track changes (optional) =====

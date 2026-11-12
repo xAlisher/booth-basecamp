@@ -107,6 +107,8 @@ int PlaylistSource::setPlaylist(const QJsonObject& cfg)
     m_cfg = QJsonObject{{"items", QJsonArray::fromStringList(entries)},
                         {"shuffle", cfg.value("shuffle").toBool(false)},
                         {"loop", cfg.value("loop").toBool(true)}};
+    const int kbps = cfg.value("kbps").toInt(0);
+    if (kbps >= 32 && kbps <= 320) { m_kbps = kbps; m_cfg["kbps"] = kbps; }   // quality choice (UI: 64-160)
     m_shuffle = m_cfg.value("shuffle").toBool();
     m_loop    = m_cfg.value("loop").toBool();
     m_files   = expand(entries);
@@ -538,7 +540,7 @@ QJsonObject PlaylistSource::state() const
 
     QJsonObject r{{"ok", true}, {"active", m_running}, {"paused", m_paused}, {"state", st},
                   {"count", int(m_files.size())}, {"shuffle", m_shuffle}, {"loop", m_loop},
-                  {"encoderRestarts", std::max(0, m_encoderStarts - 1)}};
+                  {"encoderRestarts", std::max(0, m_encoderStarts - 1)}, {"kbps", m_kbps}};
     const int pos = m_cur.proc ? m_cur.pos : (m_pendingPos >= 0 ? m_pendingPos : m_curPos);
     r["index"] = pos;
     if (pos >= 0 && pos < m_order.size() && !m_ended) {  // NB: a loop reshuffle may already have re-ordered m_order
