@@ -25,6 +25,10 @@ public slots:
     QString regenerateKey() override;
     QString regenerateOnion() override;
     QString checkDeps() override;                        // #53 re-run broadcast-helper detection → refresh depsJson
+    QString setPlaylist(QString playlistJson) override;  // #87 playlist source
+    QString playlistNext() override;
+    QString playlistPause(bool paused) override;
+    QString setNowPlaying(QString text) override;
 
 protected:
     void onContextReady() override;                       // modules() live
@@ -32,6 +36,7 @@ protected:
 private:
     void poll();                                          // async getters → PROPs
     void publishDeps();   // #53 detect mediamtx/tor/ffplay/torsocks on PATH → depsJson
+    void askModuleHelpers();   // #91 radio_module's own view (bundled helpers) → depsJson when all resolve
     void applyStreamStatus(const QString& json);
     void applyDeliveryStatus(const QString& json);
     void applyStreamCard(const QString& json);

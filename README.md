@@ -4,7 +4,7 @@
 
 
 **Booth** — the sovereign, decentralized **broadcaster** for [Logos Basecamp](https://github.com/logos-co/logos-app).
-Point OBS at Booth, hit **Start**, and it announces your station **over LogosMessaging by topic** — no
+Pick a folder of audio files (or point OBS at Booth), hit **Start**, and it announces your station **over LogosMessaging by topic** — no
 central index, no account, no directory server. Each station has a **verifiable, key-based identity**:
 broadcasters sign their announces, so a station **is its public key**, not a name anyone can grab.
 **Listening lives entirely in the sibling [Receiver](https://github.com/xAlisher/receiver-basecamp)
@@ -53,7 +53,10 @@ discovers the station over LogosMessaging (Waku), verifies its signature, and pl
 
 ## What it does
 
-- **Broadcast** — point OBS at a generated ingest URL; Booth runs the origin and announces the station.
+- **Broadcast a playlist** — pick audio files or a folder; Booth plays them itself, gapless, with the track
+  title as *Now playing*. No OBS, no Liquidsoap (`radio_module` 0.2.0, #86).
+- **Or broadcast live** — point OBS (or any RTMP/WHIP/SRT source) at a generated ingest URL; Booth runs the
+  origin and announces the station.
 - **Sign** — every announce is signed with the station's key (see [Station identity](#station-identity-🔑)),
   so listeners can verify who's broadcasting — rename-proof, impersonation-resistant.
 - **Choose reach** — announce on the **public** directory topic (everyone's Receiver sees it) or a
@@ -74,6 +77,29 @@ discovers the station over LogosMessaging (Waku), verifies its signature, and pl
 
 Discovery and playback happen in the [Receiver](https://github.com/xAlisher/receiver-basecamp) — Booth
 does not listen.
+
+### Broadcast a playlist (no OBS, no Liquidsoap)
+
+1. In **Audio source** pick **Playlist**, then **Add files…** or **Add folder…** (sub-folders included;
+   mp3, flac, m4a, ogg, opus, wav…). Choose **Play in order / Shuffle** and **Loop the list / Stop at the end**.
+2. **Start.** Booth plays the files into its own origin: one encoder for the whole broadcast, so track
+   changes never drop the stream, and the next track is pre-loaded so hand-overs are gapless.
+3. While live: **Now playing** shows the track (artist — title from the tags, else the file name), with
+   **Pause** (listeners hear silence, the stream stays up), **Next**, an optional now-playing text, and
+   edits to the list (**Apply playlist changes**). The playlist survives a restart and auto-resume
+   brings the station back playing.
+
+Nothing else to install: `ffmpeg`, `ffprobe`, `mediamtx` and `tor` ship inside the `radio_module` package
+(#91, see [Dependencies](#dependencies)). Headless stations can drive the same
+thing through the API: `startStream({…, source:"playlist", playlist:{items:[…], shuffle, loop}})`,
+`setPlaylist`, `playlistNext`, `playlistPause`, `getPlaylistState`, `setNowPlaying`.
+
+### macOS
+
+Booth builds for **darwin-arm64** (#88) and carries its own helpers, so there is nothing to `brew install`.
+If you do set `RADIO_*_BIN` or have tools on `PATH`, Booth finds Homebrew and nix binaries even though macOS
+gives apps launched from Finder a minimal `PATH`. macOS has no "kill children with the parent", so Booth records its helper processes and reaps
+any left behind by a crash on its next start.
 
 ### Public vs. private reach
 
@@ -157,12 +183,17 @@ now `delivery_module` (LogosMessaging), which has no history query, so discovery
 | **delivery** | `delivery_module` | [logos-delivery-module](https://github.com/logos-co/logos-delivery-module) (pinned v0.1.1) | LogosMessaging announce/subscribe |
 | **keycard** | `keycard_module` | [logos](https://github.com/logos-co) | hardware-backed signing (Keycard identity tier) |
 
-External runtime binaries for broadcasting (not yet bundled in the LGX — see Install):
-- **OBS Studio** (capture) + **MediaMTX** (ingest / HLS origin; `scripts/install.sh` drops a static build into the module dir).
-- **tor** (for **Hide IP with Tor** mode — system `apt install tor`, or nix).
-- **ffmpeg** (media plumbing).
+Runtime helpers are **bundled inside the `radio_module` .lgx** at `<module-dir>/bin/` (#91), built from one
+pinned nixpkgs and made relocatable (`@loader_path` on macOS, `$ORIGIN` on Linux):
+- **MediaMTX** (ingest / HLS origin), **tor** (Hide IP with Tor; 0.4.9+), **ffmpeg** + **ffprobe** (a trimmed,
+  audio-only build for the playlist source). Exact versions: [`radio_module/nix/bundled-versions.txt`](radio_module/nix/bundled-versions.txt).
+  We own their security updates: bump the `nixpkgs-helpers` pin, rebuild, re-release.
+- **OBS Studio** only if you broadcast live instead of a playlist.
 
-Each binary is resolved as: `RADIO_*_BIN` env override → `<module-dir>[/bin]/<tool>` → `PATH`.
+Each binary is resolved as: `RADIO_*_BIN` env override → bundled `<module-dir>[/bin]/<tool>` → `PATH` → known
+install dirs (Homebrew, nix profiles, `/usr/local/bin`). The setup card asks `radio_module` (`checkHelpers`)
+and stays hidden when everything resolves. Builds need `--impure` until logos-module-builder PR #184 lands:
+`cd radio_module && nix build --impure .#lgx-portable`.
 
 ## Build
 
@@ -243,6 +274,10 @@ printf linux-amd64 > "$MDIR/delivery_module/variant"
 radio_module/tests/run-direct-test.sh
 # Core — logoscore load/dispatch smoke
 radio_module/tests/run-headless-tests.sh
+# Playlist source + child guard — standalone (Qt + ffmpeg; mediamtx on PATH adds the live-origin test)
+radio_module/tests/run-playlist-test.sh
+# … on the Mac (darwin-arm64): sync + test / build, host from scripts/hosts.local.env (gitignored)
+scripts/mac.sh test && scripts/mac.sh build
 # UI — QML loads + elements instantiate
 cd radio_ui && nix build .#integration-test -L
 ```
@@ -258,7 +293,8 @@ for exactly what each test proves and what still needs the running AppImage.
 | `RADIO_DIRECTORY_TOPIC` | `/radio-basecamp/1/directory/json` | Public discovery topic |
 | `RADIO_HEARTBEAT_MS` | 15000 | Re-announce interval |
 | `RADIO_TTL_MS` | 45000 | A Receiver drops a station after this without a heartbeat |
-| `RADIO_MEDIAMTX_BIN` / `RADIO_FFMPEG_BIN` | `mediamtx` / `ffmpeg` | Binary paths |
+| `RADIO_MEDIAMTX_BIN` / `RADIO_FFMPEG_BIN` / `RADIO_FFPROBE_BIN` / `RADIO_TOR_BIN` | found automatically | Binary paths |
+| `RADIO_PLAYLIST_KBPS` | 96 | Playlist encoder bitrate (AAC). Listeners pull it over a Tor onion circuit: 160k measured 0.86x real time (stutters), 128k ~1.1x, so 96k leaves headroom |
 
 ## License
 

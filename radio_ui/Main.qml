@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs   // #87 FileDialog/FolderDialog for the playlist (works in Basecamp, see qml-sandbox-restrictions)
 
 import Logos.Theme      // logos-design-system (native on RC3+ Basecamp) — skill: logos-design-system-adoption
 import Logos.Controls   // LogosText / LogosButton / LogosBadge / LogosComboBox / LogosTextField
@@ -38,11 +39,71 @@ Item {
     }
     readonly property var deps: parseDeps(backend ? backend.depsJson : "")
 
+    // ── #87 Playlist source: stream audio files with no OBS / Liquidsoap ─────────
+    function parsePlaylist(s) { if (!s) return {}; try { return JSON.parse(s) || {} } catch (e) { return {} } }
+    readonly property var  playlist: parsePlaylist(backend ? backend.playlistJson : "")
+    readonly property bool livePlaylist: root.streamCard !== null && root.streamCard.source === "playlist"
+    property int  sourceTab: 0        // #87 setup tabs: 0 Playlist | 1 External (OBS, Liquidsoap…)
+    property int  plOrder: 0          // 0 in order | 1 shuffle
+    property int  plEnd: 0            // 0 loop | 1 stop at the end
+    readonly property var kbpsChoices: [64, 96, 128, 160]
+    property int  plKbpsIdx: 1        // 96 kbps default: listeners pull over Tor (160 measured 0.86x real time)
+    property bool plDirty: false      // edited since last sent to radio_module (live "Apply")
+    ListModel { id: plItems }         // { path } — files and folders, as chosen
+    function plConfig() {
+        var items = []
+        for (var i = 0; i < plItems.count; i++) items.push(plItems.get(i).path)
+        return { items: items, shuffle: root.plOrder === 1, loop: root.plEnd === 0, kbps: root.kbpsChoices[root.plKbpsIdx] }
+    }
+    function urlToPath(u) {
+        var s = u.toString()
+        if (s.indexOf("file://") === 0) s = decodeURIComponent(s.substring(7))
+        return s
+    }
+    function addPaths(urls) {
+        for (var i = 0; i < urls.length; i++) {
+            var p = root.urlToPath(urls[i]), dup = false
+            for (var j = 0; j < plItems.count; j++) if (plItems.get(j).path === p) dup = true
+            if (!dup && p.length > 0) plItems.append({ "path": p })
+        }
+        root.plDirty = true
+    }
+    function baseName(p) { var i = p.lastIndexOf("/"); return i >= 0 ? p.substring(i + 1) : p }
+    function mmss(sec) { sec = Math.max(0, Math.floor(sec || 0)); var m = Math.floor(sec / 60), s = sec % 60; return m + ":" + (s < 10 ? "0" : "") + s }
+    // Restore the last playlist from radio_module (it persists it in station.json) the first time we hear it.
+    onPlaylistChanged: {
+        if (plItems.count > 0 || root.plDirty || !root.playlist.config || !root.playlist.config.items) return
+        var items = root.playlist.config.items
+        for (var i = 0; i < items.length; i++) plItems.append({ "path": items[i] })
+        root.plOrder = root.playlist.config.shuffle ? 1 : 0
+        root.plEnd = root.playlist.config.loop === false ? 1 : 0
+        var k = root.kbpsChoices.indexOf(root.playlist.config.kbps)
+        if (k >= 0) root.plKbpsIdx = k
+    }
+    function applyPlaylist() {
+        logos.watch(backend.setPlaylist(JSON.stringify(root.plConfig())), function(){ root.plDirty = false }, function(){})
+    }
+    FileDialog {
+        id: addFilesDialog
+        title: "Add audio files"
+        fileMode: FileDialog.OpenFiles
+        nameFilters: ["Audio (*.mp3 *.flac *.m4a *.aac *.ogg *.oga *.opus *.wav *.aif *.aiff *.wma *.mka)", "All files (*)"]
+        onAccepted: root.addPaths(selectedFiles)
+    }
+    FolderDialog {
+        id: addFolderDialog
+        title: "Add a folder of audio (sub-folders included)"
+        onAccepted: root.addPaths([selectedFolder])
+    }
+
     // ── Backend actions (SLOTs via logos.watch) ────────────────────────────────
     function startStream() {
         var onion = privacyBox.currentIndex === 0   // model[0] = Onion (default)
+        var usePlaylist = root.sourceTab === 0   // #87 Playlist tab
         var cfg = JSON.stringify({
             name: nameField.text,
+            source: usePlaylist ? "playlist" : "external",
+            playlist: root.plConfig(),
             visibility: visBox.currentIndex === 1 ? "private" : "public",
             pass: visBox.currentIndex === 1 ? privPassField.text : "",   // #66 non-empty ⇒ encrypted private stream
             privateTopic: visBox.currentIndex === 1 ? privTopicField.text.trim() : "",
@@ -51,7 +112,8 @@ Item {
             description: descField.text
         })
         logos.watch(backend.startStream(cfg),
-            function(){ logEvent("Stream started: " + nameField.text + (onion ? " · onion" : " · direct"), "success") },
+            function(){ root.plDirty = false
+                        logEvent("Starting " + nameField.text + (onion ? " · onion" : " · direct") + (usePlaylist ? " · playlist" : ""), "info") },
             function(){ logEvent("Couldn't start the stream.", "error") })
     }
     function stopStream() { logos.watch(backend.stopStream(), function(){ logEvent("Stream stopped", "info") }, function(){}) }
@@ -162,6 +224,84 @@ Item {
                     id: cbArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                     onClicked: { root.copyText(cmd); cbBtn.opacity = 0.25; cbFb.restart() }
                 }
+            }
+        }
+    }
+
+    // #87 small glyph button (↑ ↓ ✕) in the playlist rows — same look as the activity log's clear button.
+    component GlyphBtn: Rectangle {
+        property string glyph: ""
+        property string tip: ""
+        signal clicked()
+        implicitWidth: 22; implicitHeight: 22; radius: 4; color: "transparent"
+        opacity: gbArea.containsMouse ? 0.95 : 0.5
+        LogosText { anchors.centerIn: parent; text: glyph; color: Theme.palette.textSecondary; font.pixelSize: 13 }
+        MouseArea { id: gbArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: parent.clicked() }
+        ToolTip { visible: gbArea.containsMouse && tip.length > 0; text: tip; delay: 500 }
+    }
+
+    // #87 playlist editor — shared by the setup form and the live card (both edit root's plItems).
+    component PlaylistEditor: ColumnLayout {
+        Layout.fillWidth: true; spacing: 6
+        RowLayout {
+            Layout.fillWidth: true; spacing: 8
+            // compact (the tab already names the section; full-size buttons crushed a label here)
+            LogosButton { text: "Add files…"; implicitWidth: 120; implicitHeight: 32; onClicked: addFilesDialog.open() }
+            LogosButton { text: "Add folder…"; implicitWidth: 120; implicitHeight: 32; onClicked: addFolderDialog.open() }
+            LogosText {
+                text: plItems.count === 0 ? "" : plItems.count + (plItems.count === 1 ? " entry" : " entries")
+                color: Theme.palette.textMuted; font.pixelSize: Theme.typography.secondaryText
+                horizontalAlignment: Text.AlignRight; Layout.fillWidth: true
+            }
+        }
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: plItems.count === 0 ? emptyHint.implicitHeight + 20 : Math.min(plItems.count, 5) * 28 + 8
+            radius: 6; color: Theme.palette.background; border.color: Theme.palette.borderHairline; border.width: 1
+            LogosText {
+                id: emptyHint
+                visible: plItems.count === 0
+                anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 10 }
+                text: "Add audio files or a folder (mp3, flac, m4a, ogg, wav…). Folders include their sub-folders."
+                color: Theme.palette.textMuted; font.pixelSize: Theme.typography.secondaryText; wrapMode: Text.WordWrap
+            }
+            ListView {
+                anchors.fill: parent; anchors.margins: 4
+                visible: plItems.count > 0
+                clip: true; model: plItems
+                ScrollBar.vertical: ScrollBar {}
+                delegate: RowLayout {
+                    width: ListView.view.width - 8; height: 28; spacing: 2
+                    LogosText {
+                        text: root.baseName(model.path)
+                        color: Theme.palette.text; font.pixelSize: Theme.typography.secondaryText
+                        elide: Text.ElideMiddle; Layout.fillWidth: true; Layout.leftMargin: 6
+                    }
+                    GlyphBtn { glyph: "↑"; tip: "Move up"; visible: index > 0
+                               onClicked: { plItems.move(index, index - 1, 1); root.plDirty = true } }
+                    GlyphBtn { glyph: "↓"; tip: "Move down"; visible: index < plItems.count - 1
+                               onClicked: { plItems.move(index, index + 1, 1); root.plDirty = true } }
+                    GlyphBtn { glyph: "✕"; tip: model.path
+                               onClicked: { plItems.remove(index, 1); root.plDirty = true } }
+                }
+            }
+        }
+        RowLayout {
+            Layout.fillWidth: true; spacing: 12
+            LogosComboBox { model: ["Play in order", "Shuffle"]; Layout.fillWidth: true
+                            currentIndex: root.plOrder; onActivated: { root.plOrder = currentIndex; root.plDirty = true } }
+            LogosComboBox { model: ["Loop the list", "Stop at the end"]; Layout.fillWidth: true
+                            currentIndex: root.plEnd; onActivated: { root.plEnd = currentIndex; root.plDirty = true } }
+        }
+        // Quality = AAC bitrate. Listeners pull the stream over a Tor onion circuit, which is slow and varies:
+        // higher sounds better but stutters more on weak circuits.
+        RowLayout {
+            Layout.fillWidth: true; spacing: 12
+            LogosText { text: "Quality"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+            LogosComboBox {
+                Layout.fillWidth: true
+                model: ["64 kbps — smoothest over Tor", "96 kbps — recommended", "128 kbps — better sound", "160 kbps — may stutter over Tor"]
+                currentIndex: root.plKbpsIdx; onActivated: { root.plKbpsIdx = currentIndex; root.plDirty = true }
             }
         }
     }
@@ -281,15 +421,42 @@ Item {
         }
 
         // ── Broadcast body ────────────────────────────────────────────────────
-        Item {
+        // Scrolls: the setup form (identity, privacy, source, playlist) is taller than the panel, and without
+        // this the Start button fell off the bottom with no way to reach it (#87).
+        Flickable {
+            id: bodyFlick
             Layout.fillWidth: true; Layout.fillHeight: true
+            clip: true
+            contentWidth: width
+            contentHeight: bodyCol.implicitHeight + 32
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: bodyFlick.contentHeight > bodyFlick.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded }
             ColumnLayout {
-                anchors.fill: parent; anchors.margins: 16; spacing: 12
+                id: bodyCol
+                x: 16; y: 16; width: bodyFlick.width - 32; spacing: 12
 
                 // setup form
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 10
                     visible: root.streamCard === null
+
+                    // #87 where the audio comes from. Tabs, not a dropdown: the two modes set up differently.
+                    LogosTabBar {
+                        Layout.fillWidth: true
+                        currentIndex: root.sourceTab
+                        onCurrentIndexChanged: root.sourceTab = currentIndex
+                        LogosTabButton { text: "Playlist" }
+                        LogosTabButton { text: "External" }
+                    }
+                    LogosText {
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: Theme.typography.secondaryText
+                        color: Theme.palette.textMuted
+                        text: root.sourceTab === 0
+                              ? "Booth plays audio files from this computer. Nothing else to install or run."
+                              : "Stream from OBS, Liquidsoap, ffmpeg or any RTMP / WHIP / SRT source. After Start you'll get a server URL and a stream key to paste into it."
+                    }
+                    PlaylistEditor { visible: root.sourceTab === 0 }
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.palette.borderHairline; Layout.topMargin: 4; Layout.bottomMargin: 4 }
                     LogosText { text: "Station name"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
                     LogosTextField { id: nameField; Layout.fillWidth: true; placeholderText: "What listeners see"; text: "My Station" }
                     RowLayout {
@@ -373,6 +540,7 @@ Item {
                     LogosTextField { id: descField; Layout.fillWidth: true; placeholderText: "Genre or a short note" }
                     LogosButton { text: "Start"
                         enabled: nameField.text.length > 0 && (keyBox.currentIndex !== 2 || root.keycardFp.length > 0)  // #7 keycard tier needs Connect first
+                                 && (root.sourceTab !== 0 || plItems.count > 0)                                          // #87 playlist needs a file
                         onClicked: root.startStream() }
                 }
 
@@ -388,8 +556,53 @@ Item {
                         id: credCol
                         anchors.fill: parent; anchors.margins: Theme.spacing.medium
                         spacing: Theme.spacing.medium
-                        LogosText { text: "Stream credentials"; color: Theme.palette.text; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightBold }
+                        LogosText { text: root.livePlaylist ? "On air · playlist" : "Stream credentials"; color: Theme.palette.text; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightBold }
+
+                        // #87 live playlist: now playing, controls, edit + apply. Replaces the RTMP card.
+                        ColumnLayout {
+                            visible: root.livePlaylist
+                            Layout.fillWidth: true; spacing: 6
+                            LogosText { text: "Now playing"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                            LogosText {
+                                Layout.fillWidth: true; wrapMode: Text.WordWrap
+                                text: root.playlist.nowPlaying && root.playlist.nowPlaying.length > 0 ? root.playlist.nowPlaying
+                                    : root.playlist.state === "ended" ? "The playlist has ended (silence on air)"
+                                    : root.playlist.state === "loading" ? "Loading…" : "—"
+                                color: Theme.palette.text; font.pixelSize: Theme.typography.primaryText; font.weight: Theme.typography.weightBold
+                            }
+                            LogosText {
+                                Layout.fillWidth: true; elide: Text.ElideRight
+                                visible: !!root.playlist.current
+                                text: (root.playlist.current ? root.mmss(root.playlist.current.elapsed)
+                                       + (root.playlist.current.duration > 0 ? " / " + root.mmss(root.playlist.current.duration) : "") : "")
+                                      + (root.playlist.paused ? " · paused" : "")
+                                      + (root.playlist.next ? " · next: " + root.playlist.next.title : "")
+                                color: Theme.palette.textMuted; font.pixelSize: Theme.typography.secondaryText
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 8
+                                LogosButton { text: root.playlist.paused ? "Resume" : "Pause"
+                                              onClicked: logos.watch(backend.playlistPause(!root.playlist.paused), function(){}, function(){}) }
+                                LogosButton { text: "Next"; enabled: root.playlist.state !== "ended"
+                                              onClicked: logos.watch(backend.playlistNext(), function(){}, function(){}) }
+                                Item { Layout.fillWidth: true }
+                            }
+                            LogosText { text: "Now playing text (optional, replaces the track title)"; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 8
+                                LogosTextField { id: npField; Layout.fillWidth: true; placeholderText: "e.g. Sunday session, live from the studio" }
+                                LogosButton { text: "Set"; Layout.preferredHeight: npField.height; enabled: npField.text.trim().length > 0
+                                              onClicked: logos.watch(backend.setNowPlaying(npField.text), function(){}, function(){}) }
+                                LogosButton { text: "Clear"; Layout.preferredHeight: npField.height; visible: root.playlist.nowPlayingOverride === true
+                                              onClicked: { npField.text = ""; logos.watch(backend.setNowPlaying(""), function(){}, function(){}) } }
+                            }
+                            PlaylistEditor {}
+                            LogosButton { text: "Apply playlist changes"; visible: root.plDirty; enabled: plItems.count > 0
+                                          onClicked: root.applyPlaylist() }
+                        }
+
                         LogosText {
+                            visible: !root.livePlaylist
                             Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.palette.textSecondary; font.pixelSize: Theme.typography.secondaryText
                             text: "In your streaming software (OBS, Liquidsoap, ffmpeg…) → set a Custom RTMP service, paste the Server and Stream Key below, then start streaming. The key is secret — don't share it."
                         }
@@ -416,8 +629,9 @@ Item {
                                 LogosButton { text: "Copy"; Layout.preferredHeight: valField.height; onClicked: root.copyText(cb.value) }
                             }
                         }
-                        CredBlock { label: "RTMP Server"; value: root.streamCard ? root.streamCard.rtmpUrl : "" }
+                        CredBlock { visible: !root.livePlaylist; label: "RTMP Server"; value: root.streamCard ? root.streamCard.rtmpUrl : "" }
                         CredBlock {
+                            visible: !root.livePlaylist
                             label: "Stream Key"; value: root.streamCard ? root.streamCard.streamKey : ""
                             secret: true; canRegen: true
                             onRegen: root.regenerateKey()
@@ -449,7 +663,6 @@ Item {
                         LogosButton { text: "Stop"; onClicked: root.stopStream() }
                     }
                 }
-                Item { Layout.fillHeight: true }
             }
         }
 

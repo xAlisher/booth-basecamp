@@ -10,3 +10,9 @@ flake.lock merge=ours
 halt.md
 logs/
 result-lgx-portable
+
+# Machine addresses (IPs, users) stay local, never in the repo. Copy scripts/hosts.example.env.
+scripts/hosts.local.env
+*.local.env
+dist/darwin-arm64/
+dist/linux-amd64/

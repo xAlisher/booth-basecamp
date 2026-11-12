@@ -44,6 +44,7 @@ RadioUiBackend::RadioUiBackend(QObject* parent)
 QString RadioUiBackend::checkDeps()
 {
     publishDeps();
+    askModuleHelpers();
     return QStringLiteral("{\"ok\":true}");   // Re-check just refreshes the depsJson PROP the card binds to
 }
 
@@ -60,14 +61,14 @@ void RadioUiBackend::publishDeps()
     const QList<Req> reqs = {   // no torsocks on mac (SIP); radio_module has no mac privoxy branch
         { "mediamtx", "RADIO_MEDIAMTX_BIN", "mediamtx" },
         { "tor",      "RADIO_TOR_BIN",      "tor"      },
-        { "ffplay",   "RADIO_FFPLAY_BIN",   "ffmpeg"   },
+        { "ffmpeg",   "RADIO_FFMPEG_BIN",   "ffmpeg"   },   // #86 playlist source (ffprobe ships with it)
     };
 #else
     const QString os = QStringLiteral("linux");
     const QList<Req> reqs = {
         { "mediamtx", "RADIO_MEDIAMTX_BIN", "mediamtx" },   // NOT in apt
         { "tor",      "RADIO_TOR_BIN",      "tor"      },
-        { "ffplay",   "RADIO_FFPLAY_BIN",   "ffmpeg"   },
+        { "ffmpeg",   "RADIO_FFMPEG_BIN",   "ffmpeg"   },   // #86 playlist source (ffprobe ships with it)
         { "torsocks", "RADIO_TORSOCKS_BIN", "torsocks" },
     };
 #endif
@@ -129,8 +130,10 @@ void RadioUiBackend::publishDeps()
             const QString onPath = QStandardPaths::findExecutable(name);
             if (!onPath.isEmpty()) { state = QStringLiteral("present"); path = onPath; }
             else {
+                // radio_module ≥ 0.2.0 probes these same install dirs itself (#88), so a tool that is only
+                // off PATH (Homebrew on macOS) works as-is: no launchctl setenv, no relaunch.
                 const QString off = findInDirs(name);
-                if (!off.isEmpty()) { state = QStringLiteral("found_offpath"); path = off; }
+                if (!off.isEmpty()) { state = QStringLiteral("present"); path = off; }
                 else                  state = QStringLiteral("missing");
             }
         }
@@ -210,6 +213,7 @@ void RadioUiBackend::onContextReady()
 {
     diag(QStringLiteral("onContextReady: modules() wired"));
     publishDeps();   // #53 re-publish now the QML replica is connected (ctor-time set can precede remoting — receiver#55)
+    askModuleHelpers();   // #91 radio_module knows what it will actually spawn (bundled helpers included)
     m_poll = new QTimer(this);
     m_poll->setInterval(1500);
     QObject::connect(m_poll, &QTimer::timeout, this, &RadioUiBackend::poll);
@@ -228,6 +232,8 @@ void RadioUiBackend::poll()
         [this](QString s){ static int m=0; if (m++ < 3) diag(QStringLiteral("getStreamStatus reply #%1: %2").arg(m).arg(s.left(60))); applyStreamStatus(s); }, Timeout());
     modules().radio_module.getStreamCardAsync(
         [this](QString s){ applyStreamCard(s); }, Timeout());
+    modules().radio_module.getPlaylistStateAsync(          // #87 cheap getter; drives the playlist panel
+        [this](QString s){ if (s != playlistJson()) setPlaylistJson(s); }, Timeout());
 }
 
 void RadioUiBackend::applyDeliveryStatus(const QString& json)
@@ -276,8 +282,16 @@ QString RadioUiBackend::startStream(QString configJson)
     if (!isContextReady()) return QStringLiteral("{\"ok\":false,\"error\":\"context_not_ready\"}");
     diag(QStringLiteral("startStream: fire-and-forget (spawns MediaMTX)"));
     modules().radio_module.startStreamAsync(configJson,
-        [this](QString){ diag(QStringLiteral("startStream cb fired"));
-                         emit activity(QStringLiteral("Stream started")); }, Timeout());
+        [this](QString r){
+            diag(QStringLiteral("startStream cb fired: %1").arg(r.left(120)));
+            const QJsonObject o = QJsonDocument::fromJson(r.toUtf8()).object();
+            if (o.value(QStringLiteral("ok")).toBool()) { setLastError(QString()); emit activity(QStringLiteral("Stream started")); return; }
+            const QString e = o.value(QStringLiteral("error")).toString(QStringLiteral("unknown"));
+            setLastError(e);
+            emit activity(e == QLatin1String("playlist_empty")   ? QStringLiteral("Couldn't start: the playlist has no playable audio files")
+                        : e == QLatin1String("ffmpeg_not_found") ? QStringLiteral("Couldn't start: ffmpeg isn't installed (see the tools card)")
+                        : QStringLiteral("Couldn't start: ") + e);
+        }, Timeout());
     emit activity(QStringLiteral("Starting stream…"));
     return QStringLiteral("{\"ok\":true}");
 }
@@ -307,4 +321,69 @@ QString RadioUiBackend::regenerateOnion()
         [this](QString){ emit activity(QStringLiteral("Rotating Tor address — listeners will rediscover")); }, Timeout());
     setOnionReady(false); setOnionAddr(QString());
     return QStringLiteral("{\"ok\":true}");
+}
+
+// ── #87 playlist source: forwarders (quick, no subprocess spawn on the UI's path except setPlaylist → decoders,
+//    which radio_module does asynchronously) ─────────────────────────────────────────────────────────────
+QString RadioUiBackend::setPlaylist(QString playlistJson)
+{
+    if (!isContextReady()) return QStringLiteral("{\"ok\":false,\"error\":\"context_not_ready\"}");
+    modules().radio_module.setPlaylistAsync(playlistJson, [this](QString r) {
+        const QJsonObject o = QJsonDocument::fromJson(r.toUtf8()).object();
+        emit activity(o.value(QStringLiteral("ok")).toBool()
+                      ? QStringLiteral("Playlist updated · %1 tracks").arg(o.value(QStringLiteral("count")).toInt())
+                      : QStringLiteral("Playlist has no playable audio files"));
+        poll();
+    }, Timeout());
+    return QStringLiteral("{\"ok\":true}");
+}
+
+QString RadioUiBackend::playlistNext()
+{
+    if (!isContextReady()) return QStringLiteral("{\"ok\":false,\"error\":\"context_not_ready\"}");
+    modules().radio_module.playlistNextAsync([this](QString s){ setPlaylistJson(s); }, Timeout());
+    return QStringLiteral("{\"ok\":true}");
+}
+
+QString RadioUiBackend::playlistPause(bool paused)
+{
+    if (!isContextReady()) return QStringLiteral("{\"ok\":false,\"error\":\"context_not_ready\"}");
+    modules().radio_module.playlistPauseAsync(paused, [this](QString s){ setPlaylistJson(s); }, Timeout());
+    emit activity(paused ? QStringLiteral("Playlist paused — listeners hear silence, the stream stays up")
+                         : QStringLiteral("Playlist resumed"));
+    return QStringLiteral("{\"ok\":true}");
+}
+
+QString RadioUiBackend::setNowPlaying(QString text)
+{
+    if (!isContextReady()) return QStringLiteral("{\"ok\":false,\"error\":\"context_not_ready\"}");
+    modules().radio_module.setNowPlayingAsync(text, [this, text](QString){
+        emit activity(text.trimmed().isEmpty() ? QStringLiteral("Now playing: back to the track titles")
+                                               : QStringLiteral("Now playing set: ") + text.trimmed());
+        poll();
+    }, Timeout());
+    return QStringLiteral("{\"ok\":true}");
+}
+
+// #91 radio_module ≥ 0.2.0 ships mediamtx/tor/ffmpeg/ffprobe inside its .lgx, which the local PATH probe in
+// publishDeps() can't see. Ask the module where each helper resolves; if all resolve, the card has nothing to
+// say. An older module (no checkHelpers) just times out and the local detection stays in charge.
+void RadioUiBackend::askModuleHelpers()
+{
+    if (!isContextReady()) return;
+    modules().radio_module.checkHelpersAsync([this](QString r) {
+        const QJsonObject o = QJsonDocument::fromJson(r.toUtf8()).object();
+        diag(QStringLiteral("checkHelpers -> %1").arg(r.left(300)));
+        if (!o.value(QStringLiteral("ok")).toBool()) return;   // something missing: keep the install guidance
+        QJsonArray items;
+        for (const QJsonValue& v : o.value(QStringLiteral("items")).toArray()) {
+            const QJsonObject h = v.toObject();
+            items.append(QJsonObject{{"name", h.value("name")}, {"state", "present"}, {"path", h.value("path")},
+                                     {"source", h.value("source")}});
+        }
+        const QJsonObject root{{"ok", true}, {"os", QJsonDocument::fromJson(depsJson().toUtf8()).object().value("os")},
+                               {"bundled", o.value(QStringLiteral("bundled"))}, {"items", items},
+                               {"installCmd", QString()}, {"setenvBlock", QString()}, {"needsRelaunch", false}};
+        setDepsJson(QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact)));
+    }, Timeout());
 }
