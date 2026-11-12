@@ -19,7 +19,12 @@ module** — Booth is broadcast-only.
 > (`radio_module` + `radio_ui`, ✓ Signed by xAlisher) — see [Install](#install-into-logos-basecamp).
 > Universal API (`modules().radio_module`) + design-system UI. Runs on Basecamp **v0.2+**: Start →
 > MediaMTX → credentials → signed announce published.
-> **v0.2.4** ([release](https://github.com/xAlisher/booth-basecamp/releases/tag/v0.2.4)) makes the station
+> **v0.3.0** ([release](https://github.com/xAlisher/booth-basecamp/releases/tag/v0.3.0)): **macOS (Apple Silicon)
+> + a built-in playlist source + zero-install**. `radio_module` 0.2.0 + `radio_ui` 0.3.0, signed, for Linux x86-64
+> and macOS. Booth's setup has two tabs: **Playlist** (pick audio files or a folder; gapless, titles as Now playing,
+> Quality 64-160 kbps) and **External** (OBS / Liquidsoap / ffmpeg, as before). `mediamtx`, `tor` 0.4.9.16 and
+> `ffmpeg` ship inside the package. Also fixes stations being invisible to Receiver 0.5+ (shard layout, #92).
+> **v0.2.4** ([release](https://github.com/xAlisher/booth-basecamp/releases/tag/v0.2.4)) made the station
 > **visible again on Basecamp 0.3.x** (`radio_module` 0.1.3): delivery_module 0.3.0 moved the `logos.dev`
 > preset to Waku cluster 3, so Booth now pins `clusterId: 2` + the logos.test fleet and uses OS-assigned
 > ports (a fixed `:60000` could collide at boot). Works on delivery 0.2.x and 0.3.0. RLN stays off for now
@@ -205,19 +210,25 @@ cd ../radio_ui   && nix run .     # launches the UI in logos-standalone-app
 
 ### Install into Logos Basecamp
 
-**Signed release** (✓ Signed by xAlisher — no `--allow-unsigned`). On Basecamp **v0.2+** (universal
-API). Runtime deps on PATH: `ffmpeg`, `tor` (for `.onion`), `mediamtx` (ingest / HLS origin). Install
-both artifacts — `radio_ui` depends on `radio_module` (module IDs are unchanged despite the Booth rebrand):
+**Signed release [v0.3.0](https://github.com/xAlisher/booth-basecamp/releases/tag/v0.3.0)** (✓ Signed by
+xAlisher, no `--allow-unsigned`), for **Linux x86-64** and **macOS Apple Silicon**. Nothing else to install:
+`mediamtx`, `tor` and `ffmpeg` are bundled in `radio_module`. Needs `delivery_module` 0.3.3 (the catalog
+installs it). Install both artifacts for your platform; `radio_ui` depends on `radio_module`.
 
+**GUI (any platform):** Basecamp → Modules → Install LGX Package → `radio_module-0.2.0-<platform>.lgx`, then
+`radio_ui-0.3.0-<platform>.lgx` (`<platform>` = `linux-amd64` or `darwin-arm64`).
+
+**Linux CLI:**
 ```bash
 PROF=~/.local/share/Logos/LogosBasecamp
-base=https://github.com/xAlisher/booth-basecamp/releases/download/v0.2.4
-for a in radio_module-0.1.3 radio_ui-0.2.4; do
+base=https://github.com/xAlisher/booth-basecamp/releases/download/v0.3.0
+for a in radio_module-0.2.0 radio_ui-0.3.0; do
   curl -fL -o "$a-linux-amd64.lgx" "$base/$a-linux-amd64.lgx"
   lgpm --modules-dir "$PROF/modules" --ui-plugins-dir "$PROF/plugins" install --file "$a-linux-amd64.lgx"
 done
 ```
-Then launch Basecamp and open **Booth**.
+Then launch Basecamp and open **Booth**. Headless stations: upgrade with `scripts/upgrade-station.sh` and drop
+any `RADIO_DELIVERY_PRESET=logos.dev` export (#92).
 
 From source:
 
@@ -228,9 +239,9 @@ From source:
 
 ### Installing `delivery_module` (required — it does **NOT** ship with the platform)
 
-> **Update (v0.2.4, 2026-10-05):** on Basecamp 0.3.x the package manager installs `delivery_module` as a
-> dependency, and radio_module 0.1.3 is verified against delivery **0.2.3** and **0.3.0**. The v0.1.1 pin
-> below is historical (Basecamp 0.2-era); you only need it on an old host.
+> **Update (v0.3.0, 2026-11-12):** on Basecamp 0.3.x the package manager installs `delivery_module` as a
+> dependency. radio_module 0.2.0 is verified live against delivery **0.3.3** (Sneg, Miner, macOS). The v0.1.1
+> pin below is historical (Basecamp 0.2-era); you only need it on an old host.
 
 `radio_module` depends on `delivery_module`, and **no Basecamp build or catalog bundles it** — you
 install it yourself. Pin it to **`v0.1.1`** (rev `0c346c0c`, metadata version `1.1.0`). Do **not** use
