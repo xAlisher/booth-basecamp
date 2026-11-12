@@ -66,6 +66,7 @@ public:
     Q_INVOKABLE QString playlistPause(bool paused) override;
     Q_INVOKABLE QString getPlaylistState() override;
     Q_INVOKABLE QString setNowPlaying(const QString& text) override;
+    Q_INVOKABLE QString checkHelpers() override;   // #91
 
     // Test/IPC seam (#5): decode + ingest a station announce. Called by the delivery_module
     // messageReceived handler and directly by tests/direct_test.cpp. Not part of the IPC API.

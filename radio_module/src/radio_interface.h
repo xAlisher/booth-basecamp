@@ -89,6 +89,11 @@ public:
     Q_INVOKABLE virtual QString getPlaylistState() = 0;
     /** Manual now-playing text; overrides the track title until cleared with "". @return {ok, nowPlaying} */
     Q_INVOKABLE virtual QString setNowPlaying(const QString& text) = 0;
+
+    // --- Runtime helpers (#91) ---
+    /** Where each helper resolves, exactly as radio_module will spawn it (the deps card asks this).
+     *  @return {ok, bundled, items:[{name, path, source:"env"|"bundled"|"path"|"missing"}]} */
+    Q_INVOKABLE virtual QString checkHelpers() = 0;
 };
 
 #define RadioModuleInterface_iid "org.logos.RadioModuleInterface"

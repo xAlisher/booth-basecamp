@@ -46,6 +46,13 @@ static bool spinUntil(Pred p, int timeoutMs)
     return p();
 }
 
+// Playlist binaries can differ from the fixture-making ffmpeg: RADIO_FFMPEG_BIN / RADIO_FFPROBE_BIN test a
+// bundled (trimmed) build, which has no mp3/flac/vorbis encoders to make fixtures with.
+static void useBins(PlaylistSource& pl)
+{
+    pl.setBinaries(qEnvironmentVariable("RADIO_FFMPEG_BIN", "ffmpeg"), qEnvironmentVariable("RADIO_FFPROBE_BIN", "ffprobe"));
+}
+
 static bool makeTone(const QString& out, int hz, double secs, const QString& title, const QString& artist)
 {
     QStringList a{"-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
@@ -111,6 +118,7 @@ int main(int argc, char** argv)
     // ===== 1. File output: order, titles, skip broken, one encoder, real-time pacing, ended =====
     {
         PlaylistSource pl;
+        useBins(pl);
         const int n = pl.setPlaylist(QJsonObject{{"items", QJsonArray{music}}, {"shuffle", false}, {"loop", false}});
         check(n == 4, QStringLiteral("folder expands recursively to 4 audio files (got %1), .txt ignored").arg(n));
         QStringList titles;
@@ -148,6 +156,7 @@ int main(int argc, char** argv)
     // ===== 1b. A clean hand-over (no broken file between) is gapless: no silence between first and last audio =====
     {
         PlaylistSource pl;
+        useBins(pl);
         pl.setPlaylist(QJsonObject{{"items", QJsonArray{music + "/02 a.mp3", music + "/10 b.flac", sub + "/c.ogg"}}, {"loop", false}});
         qint64 silenceAtFirstAudio = -1, silenceAtLastChange = -1;
         int changes = 0;
@@ -168,6 +177,7 @@ int main(int argc, char** argv)
     // ===== 2. Controls: next, pause (silence keeps flowing), resume at the same spot, shuffle+loop =====
     {
         PlaylistSource pl;
+        useBins(pl);
         pl.setPlaylist(QJsonObject{{"items", QJsonArray{music + "/02 a.mp3", music + "/10 b.flac"}}, {"loop", true}});
         QStringList titles;
         QObject::connect(&pl, &PlaylistSource::trackChanged, [&](const QString& t) { titles << t; });
@@ -204,6 +214,7 @@ int main(int argc, char** argv)
     // ===== 3. Empty / bad input =====
     {
         PlaylistSource pl;
+        useBins(pl);
         check(pl.setPlaylist(QJsonObject{{"items", QJsonArray{tmp.path() + "/nope", music + "/notes.txt"}}}) == 0,
               "missing paths and non-audio files give an empty playlist");
         check(pl.state().value("error").toString() == "playlist_empty", "empty playlist reports playlist_empty");
@@ -231,6 +242,7 @@ int main(int argc, char** argv)
               "MediaMTX up on test ports");
 
         PlaylistSource pl;
+        useBins(pl);
         pl.setPlaylist(QJsonObject{{"items", QJsonArray{music}}, {"loop", true}});
         QStringList titles;
         QObject::connect(&pl, &PlaylistSource::trackChanged, [&](const QString& t) { titles << t; });

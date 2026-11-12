@@ -44,6 +44,7 @@ RadioUiBackend::RadioUiBackend(QObject* parent)
 QString RadioUiBackend::checkDeps()
 {
     publishDeps();
+    askModuleHelpers();
     return QStringLiteral("{\"ok\":true}");   // Re-check just refreshes the depsJson PROP the card binds to
 }
 
@@ -212,6 +213,7 @@ void RadioUiBackend::onContextReady()
 {
     diag(QStringLiteral("onContextReady: modules() wired"));
     publishDeps();   // #53 re-publish now the QML replica is connected (ctor-time set can precede remoting — receiver#55)
+    askModuleHelpers();   // #91 radio_module knows what it will actually spawn (bundled helpers included)
     m_poll = new QTimer(this);
     m_poll->setInterval(1500);
     QObject::connect(m_poll, &QTimer::timeout, this, &RadioUiBackend::poll);
@@ -361,4 +363,27 @@ QString RadioUiBackend::setNowPlaying(QString text)
         poll();
     }, Timeout());
     return QStringLiteral("{\"ok\":true}");
+}
+
+// #91 radio_module ≥ 0.2.0 ships mediamtx/tor/ffmpeg/ffprobe inside its .lgx, which the local PATH probe in
+// publishDeps() can't see. Ask the module where each helper resolves; if all resolve, the card has nothing to
+// say. An older module (no checkHelpers) just times out and the local detection stays in charge.
+void RadioUiBackend::askModuleHelpers()
+{
+    if (!isContextReady()) return;
+    modules().radio_module.checkHelpersAsync([this](QString r) {
+        const QJsonObject o = QJsonDocument::fromJson(r.toUtf8()).object();
+        diag(QStringLiteral("checkHelpers -> %1").arg(r.left(300)));
+        if (!o.value(QStringLiteral("ok")).toBool()) return;   // something missing: keep the install guidance
+        QJsonArray items;
+        for (const QJsonValue& v : o.value(QStringLiteral("items")).toArray()) {
+            const QJsonObject h = v.toObject();
+            items.append(QJsonObject{{"name", h.value("name")}, {"state", "present"}, {"path", h.value("path")},
+                                     {"source", h.value("source")}});
+        }
+        const QJsonObject root{{"ok", true}, {"os", QJsonDocument::fromJson(depsJson().toUtf8()).object().value("os")},
+                               {"bundled", o.value(QStringLiteral("bundled"))}, {"items", items},
+                               {"installCmd", QString()}, {"setenvBlock", QString()}, {"needsRelaunch", false}};
+        setDepsJson(QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact)));
+    }, Timeout());
 }

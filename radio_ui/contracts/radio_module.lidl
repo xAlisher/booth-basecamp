@@ -17,4 +17,5 @@ module radio_module {
   method playlistPause(paused: bool) -> tstr description "playlist state"
   method getPlaylistState() -> tstr description "{ok, active, paused, state, index, count, current, next, config, nowPlaying}"
   method setNowPlaying(text: tstr) -> tstr description "{ok, nowPlaying}"
+  method checkHelpers() -> tstr description "{ok, bundled, items:[{name, path, source}]}"
 }

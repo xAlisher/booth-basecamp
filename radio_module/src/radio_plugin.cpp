@@ -1340,3 +1340,31 @@ QString RadioModulePlugin::setNowPlaying(const QString& text)
     return QString::fromUtf8(QJsonDocument(QJsonObject{{"ok", true}, {"nowPlaying", readNowPlaying()}})
                                  .toJson(QJsonDocument::Compact));
 }
+
+// ---------------------------------------------------------------------------
+// #91 — where each runtime helper resolves (bundled in the .lgx, env override, PATH/known dirs, or missing).
+// ---------------------------------------------------------------------------
+QString RadioModulePlugin::checkHelpers()
+{
+    struct H { const char* name; const char* env; };
+    const H helpers[] = { {"mediamtx", "RADIO_MEDIAMTX_BIN"}, {"tor", "RADIO_TOR_BIN"},
+                          {"ffmpeg", "RADIO_FFMPEG_BIN"}, {"ffprobe", "RADIO_FFPROBE_BIN"} };
+    const QString dir = moduleDir();
+    QJsonArray items;
+    bool allOk = true, allBundled = true;
+    for (const H& h : helpers) {
+        const QString name = QString::fromLatin1(h.name);
+        const QString path = resolveBin(name, h.env);
+        QString source;
+        const QFileInfo fi(path);
+        if (!fi.isAbsolute() || !fi.isExecutable())           source = QStringLiteral("missing");
+        else if (!qEnvironmentVariable(h.env).isEmpty())       source = QStringLiteral("env");
+        else if (!dir.isEmpty() && path.startsWith(dir + "/")) source = QStringLiteral("bundled");
+        else                                                   source = QStringLiteral("path");
+        if (source == QLatin1String("missing")) allOk = false;
+        if (source != QLatin1String("bundled")) allBundled = false;
+        items.append(QJsonObject{{"name", name}, {"path", fi.isAbsolute() ? path : QString()}, {"source", source}});
+    }
+    return QString::fromUtf8(QJsonDocument(QJsonObject{{"ok", allOk}, {"bundled", allBundled}, {"items", items}})
+                                 .toJson(QJsonDocument::Compact));
+}

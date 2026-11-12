@@ -40,9 +40,12 @@ case "${1:-}" in
     # Qt + cmake from nixpkgs (no Homebrew Qt needed); ffmpeg/mediamtx from Homebrew.
     remote "cd radio_module && nix shell nixpkgs#qt6.qtbase nixpkgs#cmake --command ./tests/run-playlist-test.sh"
     ;;
-  build)   # radio_ui: --impure + absolute override, its relative path:../radio_module input fails without .git
+  build)   # both --impure: radio_module's helper bundle uses currentSystem (#91); radio_ui also needs an
+           # absolute override, its relative path:../radio_module input fails without .git
     sync
-    remote "cd radio_module && nix build .#lgx-portable --out-link result-lgx-portable -L 2>&1 | tail -20 && ls -la result-lgx-portable/"
+    remote "cd radio_module && nix build --impure .#lgx-portable --out-link result-lgx-portable -L 2>&1 | tail -20 && ls -la result-lgx-portable/"
+    # a new/changed flake input gets locked on the Mac (this box may have no nix daemon): bring the lock back
+    rsync -az -e "ssh ${SSH_OPTS[*]}" "$MAC_HOST:$MAC_DIR/radio_module/flake.lock" "$ROOT/radio_module/flake.lock"
     remote "cd radio_ui && nix build --impure .#lgx-portable --override-input radio_module path:\$HOME/$MAC_DIR/radio_module --out-link result-lgx-portable -L 2>&1 | tail -20 && ls -la result-lgx-portable/"
     ;;
   fetch)

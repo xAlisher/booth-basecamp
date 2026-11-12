@@ -89,20 +89,16 @@ does not listen.
    edits to the list (**Apply playlist changes**). The playlist survives a restart and auto-resume
    brings the station back playing.
 
-Only `ffmpeg` (with `ffprobe`), `mediamtx` and `tor` are needed. Headless stations can drive the same
+Nothing else to install: `ffmpeg`, `ffprobe`, `mediamtx` and `tor` ship inside the `radio_module` package
+(#91, see [Dependencies](#dependencies)). Headless stations can drive the same
 thing through the API: `startStream({…, source:"playlist", playlist:{items:[…], shuffle, loop}})`,
 `setPlaylist`, `playlistNext`, `playlistPause`, `getPlaylistState`, `setNowPlaying`.
 
 ### macOS
 
-Booth builds for **darwin-arm64** (#88). Install the helpers with Homebrew, then install Booth as usual:
-
-```
-brew install mediamtx tor ffmpeg
-```
-
-Booth finds Homebrew and nix binaries even though macOS gives apps launched from Finder a minimal
-`PATH`. macOS has no "kill children with the parent", so Booth records its helper processes and reaps
+Booth builds for **darwin-arm64** (#88) and carries its own helpers, so there is nothing to `brew install`.
+If you do set `RADIO_*_BIN` or have tools on `PATH`, Booth finds Homebrew and nix binaries even though macOS
+gives apps launched from Finder a minimal `PATH`. macOS has no "kill children with the parent", so Booth records its helper processes and reaps
 any left behind by a crash on its next start.
 
 ### Public vs. private reach
@@ -187,14 +183,17 @@ now `delivery_module` (LogosMessaging), which has no history query, so discovery
 | **delivery** | `delivery_module` | [logos-delivery-module](https://github.com/logos-co/logos-delivery-module) (pinned v0.1.1) | LogosMessaging announce/subscribe |
 | **keycard** | `keycard_module` | [logos](https://github.com/logos-co) | hardware-backed signing (Keycard identity tier) |
 
-External runtime binaries for broadcasting (not yet bundled in the LGX — see Install):
-- **MediaMTX** (ingest / HLS origin; `scripts/install.sh` drops a static build into the module dir; `brew install mediamtx` on macOS).
-- **tor** (for **Hide IP with Tor** mode — system `apt install tor`, `brew install tor`, or nix).
-- **ffmpeg** + **ffprobe** (the playlist source, and media plumbing).
+Runtime helpers are **bundled inside the `radio_module` .lgx** at `<module-dir>/bin/` (#91), built from one
+pinned nixpkgs and made relocatable (`@loader_path` on macOS, `$ORIGIN` on Linux):
+- **MediaMTX** (ingest / HLS origin), **tor** (Hide IP with Tor; 0.4.9+), **ffmpeg** + **ffprobe** (a trimmed,
+  audio-only build for the playlist source). Exact versions: [`radio_module/nix/bundled-versions.txt`](radio_module/nix/bundled-versions.txt).
+  We own their security updates: bump the `nixpkgs-helpers` pin, rebuild, re-release.
 - **OBS Studio** only if you broadcast live instead of a playlist.
 
-Each binary is resolved as: `RADIO_*_BIN` env override → `<module-dir>[/bin]/<tool>` → `PATH` → known
-install dirs (Homebrew, nix profiles, `/usr/local/bin`).
+Each binary is resolved as: `RADIO_*_BIN` env override → bundled `<module-dir>[/bin]/<tool>` → `PATH` → known
+install dirs (Homebrew, nix profiles, `/usr/local/bin`). The setup card asks `radio_module` (`checkHelpers`)
+and stays hidden when everything resolves. Builds need `--impure` until logos-module-builder PR #184 lands:
+`cd radio_module && nix build --impure .#lgx-portable`.
 
 ## Build
 

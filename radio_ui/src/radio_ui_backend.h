@@ -36,6 +36,7 @@ protected:
 private:
     void poll();                                          // async getters → PROPs
     void publishDeps();   // #53 detect mediamtx/tor/ffplay/torsocks on PATH → depsJson
+    void askModuleHelpers();   // #91 radio_module's own view (bundled helpers) → depsJson when all resolve
     void applyStreamStatus(const QString& json);
     void applyDeliveryStatus(const QString& json);
     void applyStreamCard(const QString& json);
