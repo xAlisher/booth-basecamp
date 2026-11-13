@@ -1,5 +1,5 @@
 module radio_module {
-  version "0.2.0"
+  version "0.2.1"
   description "Booth core (legacy Qt plugin). Hand-written contract covering only the methods radio_ui calls, so radio_ui can build on the current module builder before radio_module itself moves to the universal interface."
   category "media"
   depends [delivery_module]

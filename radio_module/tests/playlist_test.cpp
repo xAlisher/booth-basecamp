@@ -309,6 +309,16 @@ int main(int argc, char** argv)
         check(orphan->waitForFinished(2000), "the orphan (dead parent, same name) was reaped");
         check(ownedByLive->state() == QProcess::Running, "a child whose parent is alive is left alone");
         check(renamed->state() == QProcess::Running, "a pid whose name no longer matches is left alone");
+
+        // #96 a SIGSTOPped orphan (a paused playlist decoder) must be reaped too
+        QProcess* paused = sleeper();
+        ::kill(static_cast<pid_t>(paused->processId()), SIGSTOP);
+        QFile reg2(ChildGuard::registryPath());
+        reg2.open(QIODevice::WriteOnly | QIODevice::Append);
+        reg2.write(QStringLiteral("%1 %2 sleep\n").arg(paused->processId()).arg(deadParent).toUtf8());
+        reg2.close();
+        check(ChildGuard::reapStale() == 1 && paused->waitForFinished(2000), "a stopped (SIGSTOP) orphan is reaped as well");
+        delete paused;
         for (QProcess* p : {orphan, ownedByLive, renamed}) { p->kill(); p->waitForFinished(1000); delete p; }
 
         QProcess tracked;
