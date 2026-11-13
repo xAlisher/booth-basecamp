@@ -19,6 +19,9 @@ module** — Booth is broadcast-only.
 > (`radio_module` + `radio_ui`, ✓ Signed by xAlisher) — see [Install](#install-into-logos-basecamp).
 > Universal API (`modules().radio_module`) + design-system UI. Runs on Basecamp **v0.2+**: Start →
 > MediaMTX → credentials → signed announce published.
+> **v0.3.1** ([release](https://github.com/xAlisher/booth-basecamp/releases/tag/v0.3.1)): a clearer setup form
+> (`radio_ui` 0.3.1, #94): Station → Audio → Advanced (folded, one-line summary) → **Go live**, which says why it
+> can't start yet. `radio_module` 0.2.0 unchanged.
 > **v0.3.0** ([release](https://github.com/xAlisher/booth-basecamp/releases/tag/v0.3.0)): **macOS (Apple Silicon)
 > + a built-in playlist source + zero-install**. `radio_module` 0.2.0 + `radio_ui` 0.3.0, signed, for Linux x86-64
 > and macOS. Booth's setup has two tabs: **Playlist** (pick audio files or a folder; gapless, titles as Now playing,
@@ -210,19 +213,19 @@ cd ../radio_ui   && nix run .     # launches the UI in logos-standalone-app
 
 ### Install into Logos Basecamp
 
-**Signed release [v0.3.0](https://github.com/xAlisher/booth-basecamp/releases/tag/v0.3.0)** (✓ Signed by
+**Signed release [v0.3.1](https://github.com/xAlisher/booth-basecamp/releases/tag/v0.3.1)** (✓ Signed by
 xAlisher, no `--allow-unsigned`), for **Linux x86-64** and **macOS Apple Silicon**. Nothing else to install:
 `mediamtx`, `tor` and `ffmpeg` are bundled in `radio_module`. Needs `delivery_module` 0.3.3 (the catalog
 installs it). Install both artifacts for your platform; `radio_ui` depends on `radio_module`.
 
 **GUI (any platform):** Basecamp → Modules → Install LGX Package → `radio_module-0.2.0-<platform>.lgx`, then
-`radio_ui-0.3.0-<platform>.lgx` (`<platform>` = `linux-amd64` or `darwin-arm64`).
+`radio_ui-0.3.1-<platform>.lgx` (`<platform>` = `linux-amd64` or `darwin-arm64`).
 
 **Linux CLI:**
 ```bash
 PROF=~/.local/share/Logos/LogosBasecamp
-base=https://github.com/xAlisher/booth-basecamp/releases/download/v0.3.0
-for a in radio_module-0.2.0 radio_ui-0.3.0; do
+base=https://github.com/xAlisher/booth-basecamp/releases/download/v0.3.1
+for a in radio_module-0.2.0 radio_ui-0.3.1; do
   curl -fL -o "$a-linux-amd64.lgx" "$base/$a-linux-amd64.lgx"
   lgpm --modules-dir "$PROF/modules" --ui-plugins-dir "$PROF/plugins" install --file "$a-linux-amd64.lgx"
 done
