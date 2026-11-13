@@ -1,6 +1,6 @@
 {
   "name": "radio_module",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "core",
   "category": "media",
   "description": "Decentralized audio broadcast: MediaMTX origin control, a built-in playlist source (no OBS/Liquidsoap), and LogosMessaging discovery (announce/subscribe).",

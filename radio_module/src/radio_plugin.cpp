@@ -162,10 +162,10 @@ void RadioModulePlugin::initLogos(LogosAPI* api)
         qWarning() << "RadioModulePlugin: reaped" << reaped << "orphaned helper process(es)";
     // #11 — if a stream was active before a restart, re-spawn its origin with the same path/key.
     QTimer::singleShot(1500, this, [this]{ resumeStreamIfPersisted(); });
-    emit eventResponse("initialized", QVariantList() << "radio_module" << "0.2.0");
+    emit eventResponse("initialized", QVariantList() << "radio_module" << "0.2.1");
 }
 
-QString RadioModulePlugin::ping() { return ok("\"version\":\"0.2.0\""); }
+QString RadioModulePlugin::ping() { return ok("\"version\":\"0.2.1\""); }
 
 // ---------------------------------------------------------------------------
 // #2 spawn + #3 mint — start/stop the MediaMTX origin and return the OBS card.

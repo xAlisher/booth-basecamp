@@ -110,6 +110,9 @@ int reapStale()
         if (!pidAlive(child)) continue;                       // already gone: drop the line
         if (!sameName(processName(child), name)) continue;    // pid reused by something else: leave it
         qWarning() << "radio_module: reaping orphaned" << name << "pid" << child << "(parent" << parent << "gone)";
+        // #96 playlist decoders are paused with SIGSTOP (flow control). A stopped process only acts on SIGTERM
+        // once continued, so without SIGCONT they survived every restart as orphans.
+        ::kill(static_cast<pid_t>(child), SIGCONT);
         ::kill(static_cast<pid_t>(child), SIGTERM);
         ++killed;
     }
